@@ -50,8 +50,9 @@ class SessionApiController extends Controller
     {
         $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
         $slotIndex = $request->input('slot_index');
+        $imageData = $request->input('image_data') ?? $request->file('image_file');
 
-        $result = $this->sessionManager->captureSlot($session, $slotIndex);
+        $result = $this->sessionManager->captureSlot($session, $slotIndex, $imageData);
 
         return response()->json($result);
     }
@@ -60,8 +61,9 @@ class SessionApiController extends Controller
     {
         $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
         $slotIndex = $request->input('slot_index', 1);
+        $imageData = $request->input('image_data') ?? $request->file('image_file');
 
-        $result = $this->sessionManager->retakePhoto($session, $slotIndex);
+        $result = $this->sessionManager->retakePhoto($session, $slotIndex, $imageData);
 
         return response()->json($result);
     }

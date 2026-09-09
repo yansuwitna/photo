@@ -71,7 +71,7 @@ class SessionManager
         return $session->fresh();
     }
 
-    public function captureSlot(BoothSession $session, ?int $specificSlot = null): array
+    public function captureSlot(BoothSession $session, ?int $specificSlot = null, $imageData = null): array
     {
         $slot = $specificSlot ?? ($session->photos_captured_count + 1);
         $eventSlug = $session->event ? $session->event->slug : 'default';
@@ -80,10 +80,41 @@ class SessionManager
         $relPath = "events/{$eventSlug}/sessions/{$session->id}/originals/{$filename}";
         $fullPath = \Illuminate\Support\Facades\Storage::path($relPath);
 
-        // Capture melalui Camera Manager
-        $captureResult = $this->camera->capture($fullPath);
-        if (!$captureResult['success']) {
-            return $captureResult;
+        // Pastikan folder tujuan ada
+        $dir = dirname($fullPath);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        // Cek jika gambar dikirim langsung dari kamera HP/Tablet (Standalone Mobile Mode)
+        if (!empty($imageData)) {
+            if (is_string($imageData) && str_contains($imageData, 'base64,')) {
+                $parts = explode('base64,', $imageData);
+                $binary = base64_decode(end($parts));
+                file_put_contents($fullPath, $binary);
+            } elseif ($imageData instanceof \Illuminate\Http\UploadedFile) {
+                $imageData->move($dir, basename($fullPath));
+            } else {
+                file_put_contents($fullPath, (string)$imageData);
+            }
+
+            $imgSize = @getimagesize($fullPath);
+            $captureResult = [
+                'success' => true,
+                'file_path' => $fullPath,
+                'width' => $imgSize ? $imgSize[0] : 1920,
+                'height' => $imgSize ? $imgSize[1] : 1080,
+                'metadata' => [
+                    'source' => 'mobile_device_camera',
+                    'timestamp' => now()->toIso8601String(),
+                ],
+            ];
+        } else {
+            // Capture melalui Camera Manager (DSLR / Mirrorless / Mock HAL)
+            $captureResult = $this->camera->capture($fullPath);
+            if (!$captureResult['success']) {
+                return $captureResult;
+            }
         }
 
         // Thumbnail
@@ -124,14 +155,14 @@ class SessionManager
         ];
     }
 
-    public function retakePhoto(BoothSession $session, int $slotIndex): array
+    public function retakePhoto(BoothSession $session, int $slotIndex, $imageData = null): array
     {
         $photo = $session->photos()->where('slot_index', $slotIndex)->first();
         if ($photo) {
             $photo->increment('retake_count');
         }
 
-        return $this->captureSlot($session, $slotIndex);
+        return $this->captureSlot($session, $slotIndex, $imageData);
     }
 
     public function composeTemplate(BoothSession $session): array

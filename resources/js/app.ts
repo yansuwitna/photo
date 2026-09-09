@@ -23,3 +23,14 @@ createInertiaApp({
         showSpinner: true,
     },
 });
+
+// Registrasi PWA Service Worker untuk instalasi WebAPK di Android
+if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+            console.info('PHOTOBOOTH PRO PWA ServiceWorker aktif:', reg.scope);
+        }).catch((err) => {
+            console.warn('Gagal registrasi ServiceWorker:', err);
+        });
+    });
+}

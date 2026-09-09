@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PHOTOBOOTH PRO - Android Gateway</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1b4b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 24px;
+            padding: 32px 28px;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+        .logo-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(245, 158, 11, 0.4);
+            margin-bottom: 20px;
+            font-size: 32px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #cbd5e1;
+            margin-bottom: 8px;
+        }
+        input[type="text"] {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 14px;
+            padding: 14px 16px;
+            font-size: 15px;
+            color: #ffffff;
+            outline: none;
+            transition: all 0.2s;
+        }
+        input[type="text"]:focus {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+        }
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #0f172a;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35);
+        }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: #f1f5f9;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .btn-secondary:active {
+            background: rgba(255, 255, 255, 0.15);
+            transform: scale(0.98);
+        }
+        .status-badge {
+            margin-top: 16px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            display: none;
+        }
+        .status-success {
+            display: block;
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #6ee7b7;
+        }
+        .status-error {
+            display: block;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+        }
+        .remember-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            margin-top: 14px;
+            font-size: 13px;
+            color: #94a3b8;
+            cursor: pointer;
+        }
+        .remember-row input {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            accent-color: #f59e0b;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo-badge">📸</div>
+        <h1>PHOTOBOOTH PRO</h1>
+        <p class="subtitle">Mobile Gateway • Android Tablet & Smartphone</p>
+
+        <div class="form-group">
+            <label for="serverUrl">Alamat IP Server Booth (LAN/WiFi):</label>
+            <input type="text" id="serverUrl" placeholder="Contoh: http://192.168.1.100:8000" />
+        </div>
+
+        <label class="remember-row">
+            <input type="checkbox" id="autoConnect" checked />
+            <span>Otomatis buka mode terakhir kali dipilih</span>
+        </label>
+
+        <div id="statusMsg" class="status-badge"></div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="launchMode('/')">
+                <span>🖥️</span> Buka Layar Kiosk Booth
+            </button>
+            <button class="btn btn-secondary" onclick="launchMode('/controller')">
+                <span>📱</span> Buka Remote Controller Operator
+            </button>
+            <button class="btn btn-secondary" onclick="launchMode('/login')">
+                <span>⚙️</span> Buka Dashboard Admin
+            </button>
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size: 13px; opacity: 0.8;">
+                <span>⚡</span> Tes Koneksi Server
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULT_URL = window.location.origin.includes('localhost') || window.location.protocol.startsWith('http')
+            ? window.location.origin
+            : 'http://192.168.1.100:8000';
+
+        const serverInput = document.getElementById('serverUrl');
+        const autoCheckbox = document.getElementById('autoConnect');
+        const statusMsg = document.getElementById('statusMsg');
+
+        // Load saved settings
+        const savedUrl = localStorage.getItem('photobooth_server_url') || DEFAULT_URL;
+        const savedMode = localStorage.getItem('photobooth_last_mode');
+        const autoConnect = localStorage.getItem('photobooth_auto_connect') === 'true';
+
+        serverInput.value = savedUrl;
+        autoCheckbox.checked = autoConnect;
+
+        // Jika auto-connect aktif dan bukan pertama kali dibuka
+        if (autoConnect && savedMode && window.location.pathname === '/index.html') {
+            window.location.replace(savedUrl + savedMode);
+        }
+
+        function getNormalizedUrl() {
+            let url = serverInput.value.trim();
+            if (!url) url = DEFAULT_URL;
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                url = 'http://' + url;
+            }
+            if (url.endsWith('/')) {
+                url = url.slice(0, -1);
+            }
+            return url;
+        }
+
+        function launchMode(path) {
+            const url = getNormalizedUrl();
+            localStorage.setItem('photobooth_server_url', url);
+            localStorage.setItem('photobooth_last_mode', path);
+            localStorage.setItem('photobooth_auto_connect', autoCheckbox.checked ? 'true' : 'false');
+
+            window.location.href = url + path;
+        }
+
+        async function testConnection() {
+            const url = getNormalizedUrl();
+            statusMsg.className = 'status-badge';
+            statusMsg.style.display = 'block';
+            statusMsg.textContent = 'Menghubungi server di ' + url + '...';
+
+            try {
+                const res = await fetch(url + '/api/controller/status', { mode: 'cors', cache: 'no-store' });
+                if (res.ok) {
+                    statusMsg.className = 'status-badge status-success';
+                    statusMsg.textContent = '✅ Berhasil terhubung ke Server Booth!';
+                } else {
+                    statusMsg.className = 'status-badge status-error';
+                    statusMsg.textContent = '⚠️ Server merespon status ' + res.status + '.';
+                }
+            } catch (err) {
+                statusMsg.className = 'status-badge status-error';
+                statusMsg.textContent = '❌ Tidak dapat terhubung. Pastikan server aktif dan terhubung ke WiFi yang sama.';
+            }
+        }
+    </script>
+</body>
+</html>

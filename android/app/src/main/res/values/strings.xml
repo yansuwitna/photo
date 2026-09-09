@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PHOTOBOOTH PRO</string>
+    <string name="title_activity_main">PHOTOBOOTH PRO</string>
+    <string name="package_name">pro.photobooth.app</string>
+    <string name="custom_url_scheme">pro.photobooth.app</string>
+</resources>

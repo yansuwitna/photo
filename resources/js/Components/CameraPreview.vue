@@ -34,6 +34,10 @@ const isFullscreen = ref(false);
 
 const camera = computed(() => deviceStore.camera);
 
+const facingMode = ref<'user' | 'environment'>('user');
+const isFlashActive = ref(false);
+const hasActiveStream = ref(false);
+
 let stream: MediaStream | null = null;
 let animationId: number | null = null;
 
@@ -46,23 +50,35 @@ onUnmounted(() => {
 });
 
 async function initWebcamOrSimulated() {
+    stopCameraStream();
     try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'user' },
+                video: { 
+                    width: { ideal: 1920, min: 1280 }, 
+                    height: { ideal: 1080, min: 720 }, 
+                    facingMode: facingMode.value 
+                },
                 audio: false
             });
             if (videoRef.value) {
                 videoRef.value.srcObject = stream;
-                videoRef.value.play();
+                await videoRef.value.play();
+                hasActiveStream.value = true;
                 return;
             }
         }
     } catch (err) {
-        console.info('No direct browser webcam, using high-fidelity studio liveview canvas.');
+        console.info('Menggunakan simulasi studio photobooth canvas.', err);
     }
-    // Fallback: animated photobooth studio preview canvas
+    hasActiveStream.value = false;
     runCanvasSimulation();
+}
+
+async function switchFacingMode() {
+    facingMode.value = facingMode.value === 'user' ? 'environment' : 'user';
+    mirrorMode.value = facingMode.value === 'user';
+    await initWebcamOrSimulated();
 }
 
 function runCanvasSimulation() {
@@ -123,7 +139,7 @@ function runCanvasSimulation() {
 
 function stopCameraStream() {
     if (stream) {
-        stream.getTracks().forEach(t => t.stop());
+        stream.getTracks().forEach(track => track.stop());
         stream = null;
     }
     if (animationId) {
@@ -142,10 +158,58 @@ function toggleFullscreen() {
         isFullscreen.value = false;
     }
 }
+
+function triggerFlash() {
+    isFlashActive.value = true;
+    setTimeout(() => {
+        isFlashActive.value = false;
+    }, 250);
+}
+
+function captureCurrentFrame(): string | null {
+    triggerFlash();
+
+    // 1. Coba capture dari video stream (HP / Tablet / Webcam fisik)
+    const video = videoRef.value;
+    if (video && hasActiveStream.value && video.videoWidth > 0) {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = video.videoWidth;
+        offscreen.height = video.videoHeight;
+        const ctx = offscreen.getContext('2d');
+        if (!ctx) return null;
+
+        if (mirrorMode.value) {
+            ctx.translate(offscreen.width, 0);
+            ctx.scale(-1, 1);
+        }
+
+        ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+        return offscreen.toDataURL('image/jpeg', 0.95);
+    }
+
+    // 2. Fallback: capture dari canvas simulation
+    const canvas = canvasRef.value;
+    if (canvas) {
+        return canvas.toDataURL('image/jpeg', 0.95);
+    }
+
+    return null;
+}
+
+defineExpose({
+    captureCurrentFrame,
+    triggerFlash,
+    switchFacingMode,
+    facingMode,
+    hasActiveStream
+});
 </script>
 
 <template>
     <div class="relative w-full h-full flex flex-col bg-black overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
+        <!-- FLASH OVERLAY -->
+        <div v-if="isFlashActive" class="absolute inset-0 bg-white z-50 animate-flash"></div>
+
         <!-- TOP DEVICE STATUS BAR -->
         <div class="absolute top-0 inset-x-0 z-30 flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent backdrop-blur-sm">
             <div class="flex items-center gap-4">
@@ -179,7 +243,7 @@ function toggleFullscreen() {
         <div class="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden">
             <!-- Real Video Element if Webcam Available -->
             <video
-                ref={videoRef}
+                ref="videoRef"
                 autoplay
                 playsinline
                 muted
@@ -190,7 +254,7 @@ function toggleFullscreen() {
 
             <!-- Fallback Canvas if Simulated -->
             <canvas
-                ref={canvasRef}
+                ref="canvasRef"
                 width="1280"
                 height="720"
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-200"
@@ -261,6 +325,16 @@ function toggleFullscreen() {
                 >
                     <FlipHorizontal class="w-4 h-4" />
                     <span class="hidden sm:inline">Cermin</span>
+                </button>
+
+                <button
+                    v-if="hasActiveStream"
+                    @click="switchFacingMode"
+                    class="p-2.5 rounded-xl border transition-all text-xs flex items-center gap-1.5 bg-sky-500/20 border-sky-500/40 text-sky-300 hover:bg-sky-500/30"
+                    title="Ganti Kamera Depan / Belakang"
+                >
+                    <RefreshCw class="w-4 h-4" />
+                    <span class="hidden sm:inline">{{ facingMode === 'user' ? 'Kamera Belakang' : 'Kamera Depan' }}</span>
                 </button>
             </div>
 

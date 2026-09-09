@@ -92,11 +92,23 @@ async function startCapture(slot?: number) {
     }, 1000);
 }
 
+const cameraPreviewRef = ref<any>(null);
+
 async function executeCameraCapture(slot: number) {
     try {
-        const res = await axios.post(`/api/session/${currentSession.value.id}/capture`, {
+        let imageData: string | null = null;
+        if (cameraPreviewRef.value?.hasActiveStream && cameraPreviewRef.value?.captureCurrentFrame) {
+            imageData = cameraPreviewRef.value.captureCurrentFrame();
+        }
+
+        const payload: Record<string, any> = {
             slot_index: slot,
-        });
+        };
+        if (imageData) {
+            payload.image_data = imageData;
+        }
+
+        const res = await axios.post(`/api/session/${currentSession.value.id}/capture`, payload);
 
         if (res.data.success) {
             currentSession.value = res.data.session;
@@ -212,7 +224,7 @@ function getAssetUrl(path?: string) {
                 <div class="relative flex-1 w-full h-full flex flex-col items-center justify-between">
                     <!-- CAMERA LIVE VIEW CONTAINER -->
                     <div class="relative w-full flex-1 max-h-[75vh] flex items-center justify-center">
-                        <CameraPreview :isLive="true">
+                        <CameraPreview ref="cameraPreviewRef" :isLive="true">
                             <!-- COUNTDOWN OVERLAY -->
                             <CountdownOverlay
                                 :countdown="countdown"

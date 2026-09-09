@@ -1,0 +1,42 @@
+{
+  "name": "PHOTOBOOTH PRO",
+  "short_name": "Photobooth",
+  "description": "Sistem Photobooth Kiosk & Remote Operator Profesional",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Remote Operator Controller",
+      "short_name": "Operator",
+      "description": "Buka remote controller operator tablet",
+      "url": "/controller",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Kiosk Booth Layar Sentuh",
+      "short_name": "Kiosk",
+      "description": "Layar sentuh photobooth utama",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
