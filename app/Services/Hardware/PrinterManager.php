@@ -30,7 +30,7 @@ class PrinterManager
         }
 
         $this->adapter = match (strtolower($type)) {
-            'windows' => new WindowsPrinterAdapter(),
+            'windows' => new WindowsPrinterAdapter($this->printerModel?->name),
             'dyesub' => new DyeSubPrinterAdapter(),
             'thermal' => new ThermalPrinterAdapter(),
             default => new MockPrinter(),
@@ -49,62 +49,89 @@ class PrinterManager
         return $this->getAdapter()->getStatus();
     }
 
-    public function printFile(string $sessionId, string $filePath, int $copies = 1, string $paperSize = '4R'): array
+    public function printFile(?string $sessionId, string $filePath, int $copies = 1, string $paperSize = '4R'): array
     {
-        // Buat record PrintJob
-        $job = PrintJob::create([
-            'session_id' => $sessionId,
-            'printer_id' => $this->printerModel?->id,
-            'copies' => $copies,
-            'paper_size' => $paperSize,
-            'status' => 'printing',
-            'progress' => 20,
-            'started_at' => now(),
-        ]);
+        // Validasi apakah session_id ada di database
+        $validSessionId = null;
+        if (!empty($sessionId) && \App\Models\BoothSession::where('id', $sessionId)->exists()) {
+            $validSessionId = $sessionId;
+        }
 
-        DeviceLog::create([
-            'device_type' => 'printer',
-            'device_id' => (string)($this->printerModel?->id ?? 'default'),
-            'event' => 'printer.printing',
-            'message' => "Mencetak sesi {$sessionId}, {$copies} salinan ({$paperSize})",
-            'severity' => 'info',
-            'payload' => ['job_id' => $job->id, 'copies' => $copies, 'paper_size' => $paperSize],
-        ]);
+        // Buat record PrintJob (nullable session_id didukung untuk test print)
+        $job = null;
+        try {
+            $job = PrintJob::create([
+                'session_id' => $validSessionId,
+                'printer_id' => $this->printerModel?->id,
+                'copies' => $copies,
+                'paper_size' => $paperSize,
+                'status' => 'printing',
+                'progress' => 20,
+                'started_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Gagal menyimpan PrintJob: " . $e->getMessage());
+        }
+
+        $logMessage = $validSessionId
+            ? "Mencetak sesi {$validSessionId}, {$copies} salinan ({$paperSize})"
+            : "Mencetak uji coba printer (Test Print), {$copies} salinan ({$paperSize})";
+
+        try {
+            DeviceLog::create([
+                'device_type' => 'printer',
+                'device_id' => (string)($this->printerModel?->id ?? 'default'),
+                'event' => 'printer.printing',
+                'message' => $logMessage,
+                'severity' => 'info',
+                'payload' => ['job_id' => $job?->id, 'copies' => $copies, 'paper_size' => $paperSize],
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Gagal menyimpan DeviceLog: " . $e->getMessage());
+        }
 
         $result = $this->getAdapter()->print($filePath, $copies, $paperSize);
 
         if ($result['success']) {
-            $job->update([
-                'status' => 'completed',
-                'progress' => 100,
-                'completed_at' => now(),
-            ]);
+            if ($job) {
+                $job->update([
+                    'status' => 'completed',
+                    'progress' => 100,
+                    'completed_at' => now(),
+                ]);
+            }
 
-            DeviceLog::create([
-                'device_type' => 'printer',
-                'device_id' => (string)($this->printerModel?->id ?? 'default'),
-                'event' => 'printer.completed',
-                'message' => "Pencetakan berhasil untuk job #{$job->id}",
-                'severity' => 'info',
-                'payload' => $result,
-            ]);
+            try {
+                DeviceLog::create([
+                    'device_type' => 'printer',
+                    'device_id' => (string)($this->printerModel?->id ?? 'default'),
+                    'event' => 'printer.completed',
+                    'message' => "Pencetakan berhasil" . ($job ? " untuk job #{$job->id}" : ""),
+                    'severity' => 'info',
+                    'payload' => $result,
+                ]);
+            } catch (\Throwable $e) {}
         } else {
-            $job->update([
-                'status' => 'failed',
-                'error_message' => $result['message'] ?? 'Gagal mencetak',
-            ]);
+            if ($job) {
+                $job->update([
+                    'status' => 'failed',
+                    'error_message' => $result['message'] ?? 'Gagal mencetak',
+                ]);
+            }
 
-            DeviceLog::create([
-                'device_type' => 'printer',
-                'device_id' => (string)($this->printerModel?->id ?? 'default'),
-                'event' => 'printer.error',
-                'message' => "Pencetakan gagal: " . ($result['message'] ?? 'Error printer'),
-                'severity' => 'error',
-                'payload' => $result,
-            ]);
+            try {
+                DeviceLog::create([
+                    'device_type' => 'printer',
+                    'device_id' => (string)($this->printerModel?->id ?? 'default'),
+                    'event' => 'printer.error',
+                    'message' => "Pencetakan gagal: " . ($result['message'] ?? 'Error printer'),
+                    'severity' => 'error',
+                    'payload' => $result,
+                ]);
+            } catch (\Throwable $e) {}
         }
 
-        $result['print_job_id'] = $job->id;
+        $result['print_job_id'] = $job?->id;
         return $result;
     }
 }

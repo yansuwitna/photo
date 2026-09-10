@@ -198,7 +198,7 @@ return new class extends Migration
         // 10. Print Jobs
         Schema::create('print_jobs', function (Blueprint $table) {
             $table->id();
-            $table->foreignUuid('session_id')->constrained('sessions')->onDelete('cascade');
+            $table->foreignUuid('session_id')->nullable()->constrained('sessions')->nullOnDelete();
             $table->foreignId('printer_id')->nullable()->constrained('printers')->nullOnDelete();
             $table->integer('copies')->default(1);
             $table->string('paper_size')->default('4R');

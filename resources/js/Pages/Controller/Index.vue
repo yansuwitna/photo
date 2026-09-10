@@ -14,9 +14,18 @@ import {
     HardDrive,
     Tablet,
     Settings,
-    Home
+    Home,
+    Sparkles,
+    Lock,
+    Unlock,
+    Save,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-vue-next';
 import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
+import CameraTestModal from '@/Components/CameraTestModal.vue';
+import DeviceLockModal from '@/Components/DeviceLockModal.vue';
+import ControllerCaptureModal from '@/Components/ControllerCaptureModal.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getAssetUrl } from '@/utils/url';
 import axios from 'axios';
@@ -25,6 +34,11 @@ import { showSuccess, showError, showInfo } from '@/utils/swal';
 const props = defineProps<{
     activeSession?: any;
     templates: any[];
+    cameras?: any[];
+    printers?: any[];
+    activeCamera?: any;
+    activePrinter?: any;
+    isLocked?: boolean;
     todayStats: {
         total_sessions: number;
         total_prints: number;
@@ -37,7 +51,28 @@ const deviceStore = useDeviceStore();
 const activeSession = ref<any>(props.activeSession);
 const isStarting = ref(false);
 const isPrinting = ref(false);
+const isCapturingSlot = ref<number | null>(null);
+const isComposing = ref(false);
 const selectedTemplateId = ref<number>(props.templates[0]?.id || 1);
+
+// State Pengaturan Kamera & Printer
+const isLocked = ref(props.isLocked ?? false);
+const selectedCameraId = ref(props.activeCamera?.id ?? props.cameras?.[0]?.id ?? 1);
+const selectedPrinterId = ref(props.activePrinter?.id ?? props.printers?.[0]?.id ?? 1);
+const selectedPaperSize = ref(props.activePrinter?.default_paper_size ?? '4R');
+const showUnlockModal = ref(false);
+const isSavingDevices = ref(false);
+const showDeviceSettings = ref(false);
+
+// State untuk Modal Hasil Uji Kamera
+const showCameraModal = ref(false);
+const isTestingCamera = ref(false);
+const cameraTestResult = ref<any>(null);
+
+// State untuk Modal Viewfinder Kiosk Capture
+const showCaptureModal = ref(false);
+const currentCaptureSlot = ref<number>(1);
+const photoTimestamp = ref(Date.now());
 
 onMounted(() => {
     deviceStore.fetchStatus();
@@ -52,8 +87,61 @@ async function refreshData() {
         const res = await axios.get('/api/controller/status');
         if (res.data) {
             activeSession.value = res.data.active_session;
+            if (res.data.is_locked !== undefined) {
+                isLocked.value = res.data.is_locked;
+            }
+            if (res.data.active_camera) {
+                selectedCameraId.value = res.data.active_camera.id;
+            }
+            if (res.data.active_printer) {
+                selectedPrinterId.value = res.data.active_printer.id;
+                selectedPaperSize.value = res.data.active_printer.default_paper_size || '4R';
+            }
         }
     } catch (e) {}
+}
+
+async function handleToggleLock() {
+    if (isLocked.value) {
+        showUnlockModal.value = true;
+    } else {
+        const res = await deviceStore.lock();
+        if (res.success) {
+            isLocked.value = true;
+            showSuccess('Pengaturan Terkunci', 'Pengaturan kamera & printer dikunci untuk keamanan event.');
+        } else {
+            showError('Gagal Mengunci', res.message);
+        }
+    }
+}
+
+function onUnlocked() {
+    isLocked.value = false;
+}
+
+async function handleSaveDeviceSettings() {
+    if (isLocked.value) {
+        showError('Pengaturan Terkunci', 'Silakan buka kunci terlebih dahulu.');
+        return;
+    }
+    isSavingDevices.value = true;
+    try {
+        const res = await deviceStore.selectDevices(
+            selectedCameraId.value,
+            selectedPrinterId.value,
+            selectedPaperSize.value
+        );
+        if (res.success) {
+            showSuccess('Pengaturan Disimpan', 'Kamera dan printer aktif berhasil diperbarui.');
+            await deviceStore.fetchStatus();
+        } else {
+            showError('Gagal Menyimpan', res.message);
+        }
+    } catch (e: any) {
+        showError('Gagal Menyimpan', e?.message || 'Terjadi kesalahan sistem.');
+    } finally {
+        isSavingDevices.value = false;
+    }
 }
 
 async function startNewSession() {
@@ -72,17 +160,38 @@ async function startNewSession() {
     }
 }
 
-async function triggerRemoteCapture(slot: number) {
+function triggerRemoteCapture(slot: number) {
     if (!activeSession.value) return;
+    currentCaptureSlot.value = slot;
+    showCaptureModal.value = true;
+}
+
+function onModalCaptured(data: { session: any; photo: any; slotIndex: number; isComplete: boolean }) {
+    activeSession.value = data.session;
+    photoTimestamp.value = Date.now();
+}
+
+async function onModalCompose() {
+    await autoCompose();
+}
+
+function onModalNextSlot(nextSlot: number) {
+    currentCaptureSlot.value = nextSlot;
+}
+
+async function autoCompose() {
+    if (!activeSession.value) return;
+    isComposing.value = true;
     try {
-        const res = await axios.post(`/api/session/${activeSession.value.id}/capture`, {
-            slot_index: slot,
-        });
+        const res = await axios.post(`/api/session/${activeSession.value.id}/compose`);
         if (res.data.success) {
             activeSession.value = res.data.session;
+            showSuccess('Layout Selesai', 'Foto strip berhasil disusun dan siap dicetak.');
         }
     } catch (e) {
-        showError('Gagal Remote Capture', 'Terjadi kesalahan saat memicu capture kamera.');
+        console.error('Auto compose error:', e);
+    } finally {
+        isComposing.value = false;
     }
 }
 
@@ -107,8 +216,28 @@ async function triggerRemotePrint() {
 }
 
 async function runCameraTest() {
-    const res = await deviceStore.testCamera();
-    showInfo('Uji Kamera', res.message || 'Uji kamera selesai.');
+    isTestingCamera.value = true;
+    showCameraModal.value = true;
+    try {
+        const res = await deviceStore.testCamera();
+        if (res.success) {
+            cameraTestResult.value = {
+                image_url: res.image_url,
+                camera: res.camera || deviceStore.camera.name,
+                width: res.width,
+                height: res.height,
+                metadata: res.metadata,
+            };
+        } else {
+            showError('Uji Kamera Gagal', res.message || 'Gagal mengambil foto uji kamera.');
+            showCameraModal.value = false;
+        }
+    } catch (e: any) {
+        showError('Uji Kamera Gagal', e?.message || 'Terjadi kesalahan sistem.');
+        showCameraModal.value = false;
+    } finally {
+        isTestingCamera.value = false;
+    }
 }
 
 async function runPrinterTest() {
@@ -148,6 +277,115 @@ async function runPrinterTest() {
                 </button>
             </div>
         </header>
+
+        <!-- PENGATURAN KAMERA & PRINTER OPERATOR -->
+        <div class="my-3 p-3.5 rounded-2xl bg-slate-900 border border-white/10 flex flex-col gap-3 shadow-lg">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <!-- Lock Status Pill -->
+                    <span
+                        class="px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 border"
+                        :class="isLocked ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'"
+                    >
+                        <Lock v-if="isLocked" class="w-3.5 h-3.5" />
+                        <Unlock v-else class="w-3.5 h-3.5" />
+                        <span>{{ isLocked ? 'Perangkat Terkunci' : 'Perangkat Terbuka' }}</span>
+                    </span>
+
+                    <!-- Active Camera Pill -->
+                    <span class="px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1.5">
+                        <Camera class="w-3.5 h-3.5 text-amber-400" />
+                        <span class="text-white font-semibold">{{ deviceStore.camera.name }}</span>
+                    </span>
+
+                    <!-- Active Printer Pill -->
+                    <span class="px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1.5">
+                        <Printer class="w-3.5 h-3.5 text-sky-400" />
+                        <span class="text-white font-semibold">{{ deviceStore.printer.name }}</span>
+                        <span class="text-[10px] text-slate-400">({{ selectedPaperSize }})</span>
+                    </span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button
+                        @click="showDeviceSettings = !showDeviceSettings"
+                        class="py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 font-semibold flex items-center gap-1.5 border border-white/10 transition-all"
+                    >
+                        <Settings class="w-3.5 h-3.5" />
+                        <span>{{ showDeviceSettings ? 'Tutup Pengaturan' : 'Ubah Kamera & Printer' }}</span>
+                        <ChevronUp v-if="showDeviceSettings" class="w-3 h-3" />
+                        <ChevronDown v-else class="w-3 h-3" />
+                    </button>
+
+                    <button
+                        @click="handleToggleLock"
+                        class="py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow active:scale-95"
+                        :class="isLocked ? 'bg-amber-400 hover:bg-amber-300 text-slate-950' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'"
+                    >
+                        <Unlock v-if="isLocked" class="w-3.5 h-3.5" />
+                        <Lock v-else class="w-3.5 h-3.5" />
+                        <span>{{ isLocked ? 'Buka Kunci (PIN)' : 'Kunci Sekarang' }}</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Expandable Drawer for Changing Camera & Printer -->
+            <div v-if="showDeviceSettings" class="pt-3 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Pilih Kamera:</label>
+                    <select
+                        v-model="selectedCameraId"
+                        :disabled="isLocked"
+                        class="w-full px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
+                        :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
+                    >
+                        <option v-for="c in (deviceStore.cameras?.length ? deviceStore.cameras : props.cameras)" :key="c.id" :value="c.id">
+                            {{ c.name }} ({{ c.brand }})
+                        </option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Pilih Printer (Bisa Printer Biasa):</label>
+                    <select
+                        v-model="selectedPrinterId"
+                        :disabled="isLocked"
+                        class="w-full px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
+                        :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
+                    >
+                        <option v-for="p in (deviceStore.printers?.length ? deviceStore.printers : props.printers)" :key="p.id" :value="p.id">
+                            {{ p.name }} • {{ p.adapter === 'windows' ? 'Printer Biasa' : 'Dye-Sub' }}
+                        </option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Ukuran Kertas:</label>
+                    <div class="flex gap-2">
+                        <select
+                            v-model="selectedPaperSize"
+                            :disabled="isLocked"
+                            class="flex-1 px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
+                            :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
+                        >
+                            <option value="4R">4R (4x6 inci / Foto)</option>
+                            <option value="A4">A4 (Kertas Biasa)</option>
+                            <option value="Strip 2x6">Strip 2x6</option>
+                            <option value="5R">5R</option>
+                        </select>
+
+                        <button
+                            @click="handleSaveDeviceSettings"
+                            :disabled="isLocked || isSavingDevices"
+                            class="py-2 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs shadow flex items-center gap-1.5 transition-all disabled:opacity-40"
+                        >
+                            <Save class="w-3.5 h-3.5" />
+                            <span>{{ isSavingDevices ? 'Menyimpan...' : 'Simpan' }}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- DEVICE STATUS TILES -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 my-4">
@@ -267,30 +505,44 @@ async function runPrinterTest() {
                             <div
                                 v-for="slot in (activeSession.total_photos_required || 3)"
                                 :key="slot"
-                                class="relative aspect-[3/4] rounded-xl bg-black/50 border border-white/10 overflow-hidden flex flex-col justify-between p-2"
+                                class="relative aspect-[3/4] rounded-xl bg-black/50 border border-white/10 overflow-hidden flex flex-col justify-between p-2 group"
                             >
-                                <span class="text-[10px] font-bold text-slate-400">Foto {{ slot }}</span>
+                                <div class="flex items-center justify-between z-10">
+                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/60 text-slate-300">
+                                        Foto {{ slot }}
+                                    </span>
+                                    <span
+                                        v-if="isCapturingSlot === slot"
+                                        class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 animate-pulse"
+                                    >
+                                        Memproses...
+                                    </span>
+                                </div>
                                 
                                 <template v-if="activeSession.photos?.find((p: any) => p.slot_index === slot)">
                                     <img
-                                        :src="getAssetUrl(activeSession.photos.find((p: any) => p.slot_index === slot).original_path)"
+                                        :src="getAssetUrl(activeSession.photos.find((p: any) => p.slot_index === slot).original_path) + '?v=' + photoTimestamp"
                                         class="absolute inset-0 w-full h-full object-cover"
                                     />
                                     <button
                                         @click="triggerRemoteCapture(slot)"
-                                        class="relative z-10 mt-auto py-1 px-2 rounded-lg bg-amber-500/90 text-slate-950 font-bold text-[10px] flex items-center justify-center gap-1 shadow"
+                                        :disabled="isCapturingSlot !== null || isComposing"
+                                        class="relative z-10 mt-auto py-1.5 px-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        <RotateCcw class="w-3 h-3" />
-                                        <span>Retake</span>
+                                        <RefreshCw v-if="isCapturingSlot === slot" class="w-3 h-3 animate-spin" />
+                                        <RotateCcw v-else class="w-3 h-3" />
+                                        <span>{{ isCapturingSlot === slot ? 'Memproses...' : 'Retake' }}</span>
                                     </button>
                                 </template>
                                 <template v-else>
                                     <button
                                         @click="triggerRemoteCapture(slot)"
-                                        class="my-auto py-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] font-bold flex flex-col items-center justify-center gap-1"
+                                        :disabled="isCapturingSlot !== null || isComposing"
+                                        class="my-auto py-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] font-bold flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        <Camera class="w-4 h-4 text-amber-400" />
-                                        <span>Capture</span>
+                                        <RefreshCw v-if="isCapturingSlot === slot" class="w-5 h-5 text-amber-400 animate-spin" />
+                                        <Camera v-else class="w-5 h-5 text-amber-400" />
+                                        <span>{{ isCapturingSlot === slot ? 'Mengambil...' : 'Capture' }}</span>
                                     </button>
                                 </template>
                             </div>
@@ -307,6 +559,16 @@ async function runPrinterTest() {
                         >
                             <Printer class="w-4 h-4 stroke-[2.5]" />
                             <span>{{ isPrinting ? 'Mencetak...' : 'Cetak Foto (Printer)' }}</span>
+                        </button>
+
+                        <button
+                            v-else-if="activeSession.photos?.length >= activeSession.total_photos_required"
+                            @click="autoCompose"
+                            :disabled="isComposing"
+                            class="flex-1 py-3.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                        >
+                            <Sparkles class="w-4 h-4 stroke-[2.5]" />
+                            <span>{{ isComposing ? 'Menyusun Layout...' : 'Susun Hasil Foto (Compose)' }}</span>
                         </button>
 
                         <button
@@ -330,5 +592,39 @@ async function runPrinterTest() {
                 </template>
             </div>
         </div>
+
+        <!-- MODAL HASIL UJI KAMERA -->
+        <CameraTestModal
+            :show="showCameraModal"
+            :isLoading="isTestingCamera"
+            :imageUrl="cameraTestResult?.image_url"
+            :cameraName="cameraTestResult?.camera || deviceStore.camera.name"
+            :width="cameraTestResult?.width"
+            :height="cameraTestResult?.height"
+            :metadata="cameraTestResult?.metadata"
+            @close="showCameraModal = false"
+            @retake="runCameraTest"
+        />
+
+        <!-- MODAL BUKA KUNCI PERANGKAT -->
+        <DeviceLockModal
+            :show="showUnlockModal"
+            @close="showUnlockModal = false"
+            @unlocked="onUnlocked"
+        />
+
+        <!-- MODAL VIEWFINDER KIOSK CAPTURE -->
+        <ControllerCaptureModal
+            v-if="activeSession"
+            :show="showCaptureModal"
+            :session="activeSession"
+            :slotIndex="currentCaptureSlot"
+            :totalSlots="activeSession.total_photos_required || 3"
+            :cameraName="deviceStore.camera.name"
+            @close="showCaptureModal = false"
+            @captured="onModalCaptured"
+            @compose="onModalCompose"
+            @nextSlot="onModalNextSlot"
+        />
     </div>
 </template>

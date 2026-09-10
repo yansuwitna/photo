@@ -11,8 +11,13 @@ use Illuminate\Http\RedirectResponse;
 
 class AuthController extends Controller
 {
-    public function showLogin(): Response
+    public function showLogin(): Response|RedirectResponse
     {
+        if (Auth::check()) {
+            $defaultRedirect = Auth::user()->role === 'admin' ? '/admin' : '/';
+            return redirect()->intended($defaultRedirect);
+        }
+
         return Inertia::render('Auth/Login');
     }
 
@@ -25,7 +30,8 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
-            return redirect()->intended('/admin');
+            $defaultRedirect = Auth::user()->role === 'admin' ? '/admin' : '/';
+            return redirect()->intended($defaultRedirect);
         }
 
         return back()->withErrors([

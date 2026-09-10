@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Lock, X, ArrowRight, Delete } from 'lucide-vue-next';
+import { Lock, X, ArrowRight, Delete, LogOut } from 'lucide-vue-next';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps<{
@@ -49,6 +49,11 @@ function verifyPin() {
         errorMessage.value = 'PIN tidak valid. Coba lagi.';
         enteredPin.value = '';
     }
+}
+
+function logout() {
+    emit('close');
+    router.post('/logout');
 }
 </script>
 
@@ -128,6 +133,16 @@ function verifyPin() {
             <div class="mt-4 text-[11px] text-slate-500 text-center">
                 PIN Bawaan: 1234 (Admin) | 0000 (Operator)
             </div>
+
+            <!-- Logout / Lock Kiosk Button -->
+            <button
+                @click="logout"
+                type="button"
+                class="mt-4 w-full max-w-[260px] py-2.5 px-3 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-300 border border-rose-500/20 text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-95"
+            >
+                <LogOut class="w-4 h-4 text-rose-400" />
+                <span>Kunci Kiosk & Logout</span>
+            </button>
         </div>
     </div>
 </template>

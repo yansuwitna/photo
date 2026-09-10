@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getAssetUrl } from '@/utils/url';
+import { showToast } from '@/utils/swal';
 
 const props = defineProps<{
     stats: {
@@ -32,12 +33,24 @@ const props = defineProps<{
 
 const deviceStore = useDeviceStore();
 const isRefreshing = ref(false);
+const isTestingPrinter = ref(false);
 
 async function refreshAll() {
     isRefreshing.value = true;
     await deviceStore.fetchStatus();
     router.reload({ only: ['stats', 'recentSessions'] });
     isRefreshing.value = false;
+}
+
+async function handleTestPrint() {
+    isTestingPrinter.value = true;
+    const res = await deviceStore.testPrinter();
+    isTestingPrinter.value = false;
+    if (res.success) {
+        showToast(res.message || 'Cetak lembar tes berhasil dikirim!', 'success');
+    } else {
+        showToast(res.message || 'Gagal mencetak lembar tes', 'error');
+    }
 }
 </script>
 
@@ -218,10 +231,11 @@ async function refreshAll() {
 
                     <div class="flex items-center gap-3">
                         <button
-                            @click="deviceStore.testPrinter"
-                            class="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/10 transition-all"
+                            @click="handleTestPrint"
+                            :disabled="isTestingPrinter"
+                            class="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/10 transition-all disabled:opacity-50"
                         >
-                            Cetak Lembar Tes
+                            {{ isTestingPrinter ? 'Mengirim...' : 'Cetak Lembar Tes' }}
                         </button>
                         <Link
                             href="/admin/devices"

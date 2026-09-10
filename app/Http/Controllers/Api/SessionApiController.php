@@ -98,34 +98,58 @@ class SessionApiController extends Controller
 
     public function capture(Request $request, string $sessionId): JsonResponse
     {
-        $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
-        $slotIndex = $request->input('slot_index');
-        $imageData = $request->input('image_data') ?? $request->file('image_file');
+        try {
+            $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
+            $slotIndex = $request->input('slot_index');
+            $imageData = $request->input('image_data') ?? $request->file('image_file');
 
-        $result = $this->sessionManager->captureSlot($session, $slotIndex, $imageData);
+            $result = $this->sessionManager->captureSlot($session, $slotIndex, $imageData);
 
-        return response()->json($result);
+            return response()->json($result);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Capture error: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil foto: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function retake(Request $request, string $sessionId): JsonResponse
     {
-        $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
-        $slotIndex = $request->input('slot_index', 1);
-        $imageData = $request->input('image_data') ?? $request->file('image_file');
+        try {
+            $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
+            $slotIndex = $request->input('slot_index', 1);
+            $imageData = $request->input('image_data') ?? $request->file('image_file');
 
-        $result = $this->sessionManager->retakePhoto($session, $slotIndex, $imageData);
+            $result = $this->sessionManager->retakePhoto($session, $slotIndex, $imageData);
 
-        return response()->json($result);
+            return response()->json($result);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Retake error: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal retake foto: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function compose(string $sessionId): JsonResponse
     {
-        $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
+        try {
+            $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);
 
-        $result = $this->sessionManager->composeTemplate($session);
+            $result = $this->sessionManager->composeTemplate($session);
 
-        $result['session'] = $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']);
-        return response()->json($result);
+            $result['session'] = $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']);
+            return response()->json($result);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Compose error: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyusun template foto: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function print(Request $request, string $sessionId): JsonResponse

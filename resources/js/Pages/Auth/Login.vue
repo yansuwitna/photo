@@ -35,7 +35,14 @@ function fillCredentials(role: 'admin' | 'operator') {
             <h2 class="text-2xl font-black tracking-tight text-white uppercase text-center">
                 PHOTOBOOTH <span class="text-amber-400">PRO</span>
             </h2>
-            <p class="text-xs text-slate-400 mt-1 mb-6 text-center">Masuk ke Panel Kontrol Admin & Operator</p>
+            <p class="text-xs text-slate-400 mt-1 mb-4 text-center">
+                Silakan login untuk membuka Kiosk Touchscreen & Panel Kontrol
+            </p>
+
+            <div class="mb-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 font-medium">
+                <ShieldCheck class="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Kiosk diamankan: Login diperlukan untuk memulai</span>
+            </div>
 
             <form @submit.prevent="submit" class="w-full space-y-4 text-xs">
                 <div>

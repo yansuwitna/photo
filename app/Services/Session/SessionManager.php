@@ -78,7 +78,7 @@ class SessionManager
 
         $filename = $this->storage->generatePhotoFilename($session->id, $slot);
         $relPath = "events/{$eventSlug}/sessions/{$session->id}/originals/{$filename}";
-        $fullPath = \Illuminate\Support\Facades\Storage::path($relPath);
+        $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($relPath);
 
         // Pastikan folder tujuan ada
         $dir = dirname($fullPath);
@@ -120,7 +120,8 @@ class SessionManager
         // Thumbnail
         $thumbFilename = "thumb_" . $filename;
         $relThumb = "events/{$eventSlug}/sessions/{$session->id}/thumbnails/{$thumbFilename}";
-        $this->storage->createThumbnail($fullPath, \Illuminate\Support\Facades\Storage::path($relThumb));
+        $thumbFullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($relThumb);
+        $this->storage->createThumbnail($fullPath, $thumbFullPath);
 
         // Simpan / update ke database
         $sessionPhoto = SessionPhoto::updateOrCreate(
@@ -203,10 +204,17 @@ class SessionManager
 
         $session->update(['print_status' => 'printing', 'print_copies' => $copies]);
 
-        $fullPath = \Illuminate\Support\Facades\Storage::path($session->final_photo_path);
+        $finalRelPath = $session->final_photo_path;
+        if (\Illuminate\Support\Facades\Storage::disk('public')->exists($finalRelPath)) {
+            $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($finalRelPath);
+        } else {
+            $fullPath = \Illuminate\Support\Facades\Storage::path($finalRelPath);
+        }
+
         $paperSize = $session->template ? $session->template->paper_size : '4R';
 
-        $printRes = $this->printer->printFile($session->id, $fullPath, $copies, $paperSize);
+        $printerManager = new PrinterManager();
+        $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize);
 
         if ($printRes['success']) {
             $session->update(['print_status' => 'printed']);

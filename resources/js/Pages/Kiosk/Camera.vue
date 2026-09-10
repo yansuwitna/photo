@@ -412,7 +412,10 @@ async function triggerPrint() {
             isPrinting.value = false;
             isPrintComplete.value = true;
             audioStore.playPrintDone();
-            audioStore.speakInstruction('Pencetakan selesai! Silakan ambil foto Anda.');
+            audioStore.speakInstruction('Pencetakan selesai! Silakan ambil foto Anda di tray printer.');
+            setTimeout(() => {
+                handleDoneSession();
+            }, 1600);
         } else {
             showPrintModal.value = false;
             showError('Printer Bermasalah', res.data.message || 'Gagal mengirim dokumen ke printer.');
