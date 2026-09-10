@@ -29,6 +29,7 @@ const props = defineProps<{
     printers?: any[];
     activeCamera?: any;
     activePrinter?: any;
+    activePaperSize?: string;
     isLocked?: boolean;
     devices?: any[];
 }>();
@@ -43,7 +44,7 @@ const isTestingPrinter = ref(false);
 const isLocked = ref(props.isLocked ?? false);
 const selectedCameraId = ref(props.activeCamera?.id ?? props.cameras?.[0]?.id ?? 1);
 const selectedPrinterId = ref(props.activePrinter?.id ?? props.printers?.[0]?.id ?? 1);
-const selectedPaperSize = ref(props.activePrinter?.default_paper_size ?? '4R');
+const selectedPaperSize = ref(props.activePaperSize ?? props.activePrinter?.default_paper_size ?? '4R');
 const showUnlockModal = ref(false);
 const isSavingDevices = ref(false);
 const isSyncingPrinters = ref(false);

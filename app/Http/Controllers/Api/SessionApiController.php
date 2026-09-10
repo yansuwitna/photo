@@ -155,9 +155,10 @@ class SessionApiController extends Controller
     public function print(Request $request, string $sessionId): JsonResponse
     {
         $session = BoothSession::with(['event', 'template'])->findOrFail($sessionId);
-        $copies = $request->input('copies', 1);
+        $copies = (int)$request->input('copies', 1);
+        $paperSize = $request->input('paper_size');
 
-        $result = $this->sessionManager->printFinalPhoto($session, $copies);
+        $result = $this->sessionManager->printFinalPhoto($session, $copies, $paperSize);
 
         return response()->json($result);
     }

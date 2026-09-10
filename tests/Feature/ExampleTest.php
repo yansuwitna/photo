@@ -196,6 +196,73 @@ class ExampleTest extends TestCase
         $this->assertTrue($printer->fresh()->is_default);
         $this->assertEquals('A4', $printer->fresh()->default_paper_size);
     }
+
+    public function test_kiosk_print_uses_configured_printer_and_paper_size(): void
+    {
+        $user = User::factory()->create();
+        $printer = \App\Models\Printer::create([
+            'name' => 'EPSON L1210 Kiosk Test',
+            'brand' => 'Epson',
+            'adapter' => 'mock',
+            'is_default' => true,
+            'default_paper_size' => 'A4',
+        ]);
+        \App\Models\Setting::set('active_printer_id', $printer->id, 'hardware');
+        \App\Models\Setting::set('active_printer_paper_size', 'A4', 'hardware');
+
+        $event = \App\Models\Event::create([
+            'name' => 'Event Kiosk Print',
+            'slug' => 'event-kiosk-print',
+            'start_date' => now(),
+            'end_date' => now()->addDays(1),
+            'default_price' => 0,
+            'extra_print_price' => 0,
+            'is_active' => true,
+        ]);
+
+        $template = \App\Models\Template::create([
+            'event_id' => $event->id,
+            'name' => 'Template Kiosk Print',
+            'slug' => 'template-kiosk-print',
+            'width' => 1200,
+            'height' => 1800,
+            'paper_size' => '4R',
+            'is_active' => true,
+        ]);
+
+        // Buat file dummy final photo
+        $testFinalPath = "events/test/sessions/test-print/final/FINAL.jpg";
+        \Illuminate\Support\Facades\Storage::disk('public')->put($testFinalPath, 'dummy image content');
+
+        $session = \App\Models\BoothSession::create([
+            'session_code' => 'PB-PRINT-01',
+            'event_id' => $event->id,
+            'template_id' => $template->id,
+            'total_photos_required' => 3,
+            'photos_captured_count' => 3,
+            'final_photo_path' => $testFinalPath,
+            'status' => 'ready_to_print',
+            'current_step' => 'printing',
+            'payment_status' => 'paid',
+        ]);
+
+        $res = $this->actingAs($user)->postJson("/api/session/{$session->id}/print", [
+            'copies' => 2,
+        ]);
+
+        $res->assertStatus(200)->assertJson(['success' => true]);
+
+        $this->assertDatabaseHas('print_jobs', [
+            'session_id' => $session->id,
+            'printer_id' => $printer->id,
+            'copies' => 2,
+            'paper_size' => 'A4',
+            'status' => 'completed',
+        ]);
+
+        $this->assertEquals('printed', $session->fresh()->print_status);
+        $this->assertEquals(2, $session->fresh()->print_copies);
+    }
 }
 
 

@@ -28,4 +28,18 @@ class Setting extends Model
                 return $setting->value;
         }
     }
+
+    public static function set(string $key, $value, string $group = 'general', string $type = 'string', ?string $label = null): self
+    {
+        $valStr = is_bool($value) ? ($value ? '1' : '0') : (is_array($value) ? json_encode($value) : (string)$value);
+        return static::updateOrCreate(
+            ['key' => $key],
+            [
+                'group' => $group,
+                'value' => $valStr,
+                'type' => $type,
+                'label' => $label ?? ucfirst(str_replace('_', ' ', $key)),
+            ]
+        );
+    }
 }

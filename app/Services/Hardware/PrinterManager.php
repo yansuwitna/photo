@@ -5,6 +5,7 @@ namespace App\Services\Hardware;
 use App\Models\Printer;
 use App\Models\PrintJob;
 use App\Models\DeviceLog;
+use App\Models\Setting;
 use App\Services\Hardware\Contracts\PrinterInterface;
 use App\Services\Hardware\Adapters\Printer\WindowsPrinterAdapter;
 use App\Services\Hardware\Adapters\Printer\DyeSubPrinterAdapter;
@@ -21,12 +22,25 @@ class PrinterManager
         $this->resolveAdapter($adapterType);
     }
 
+    public function getActivePrinter(): ?Printer
+    {
+        $activeId = Setting::get('active_printer_id');
+        if ($activeId) {
+            $printer = Printer::find($activeId);
+            if ($printer) {
+                return $printer;
+            }
+        }
+
+        return Printer::where('is_default', true)->first() ?? Printer::first();
+    }
+
     public function resolveAdapter(?string $type = null): PrinterInterface
     {
+        $this->printerModel = $this->getActivePrinter();
+
         if (!$type) {
-            $default = Printer::where('is_default', true)->first() ?? Printer::first();
-            $this->printerModel = $default;
-            $type = $default ? $default->adapter : 'mock';
+            $type = $this->printerModel ? $this->printerModel->adapter : 'mock';
         }
 
         $this->adapter = match (strtolower($type)) {
@@ -39,6 +53,26 @@ class PrinterManager
         return $this->adapter;
     }
 
+    public function getPrinterModel(): ?Printer
+    {
+        return $this->printerModel ?? $this->getActivePrinter();
+    }
+
+    public function getActivePaperSize(?string $fallback = null): string
+    {
+        $settingSize = Setting::get('active_printer_paper_size');
+        if (!empty($settingSize)) {
+            return $settingSize;
+        }
+
+        $printer = $this->getPrinterModel();
+        if ($printer && !empty($printer->default_paper_size)) {
+            return $printer->default_paper_size;
+        }
+
+        return $fallback ?: '4R';
+    }
+
     public function getAdapter(): PrinterInterface
     {
         return $this->adapter ?? $this->resolveAdapter();
@@ -46,11 +80,19 @@ class PrinterManager
 
     public function getStatus(): array
     {
-        return $this->getAdapter()->getStatus();
+        $status = $this->getAdapter()->getStatus();
+        $model = $this->getPrinterModel();
+        if ($model) {
+            $status['name'] = $model->name;
+            $status['brand'] = $model->brand;
+            $status['paper_size'] = $this->getActivePaperSize();
+        }
+        return $status;
     }
 
-    public function printFile(?string $sessionId, string $filePath, int $copies = 1, string $paperSize = '4R'): array
+    public function printFile(?string $sessionId, string $filePath, int $copies = 1, ?string $paperSize = null): array
     {
+        $resolvedPaperSize = $paperSize ?: $this->getActivePaperSize();
         // Validasi apakah session_id ada di database
         $validSessionId = null;
         if (!empty($sessionId) && \App\Models\BoothSession::where('id', $sessionId)->exists()) {
@@ -64,7 +106,7 @@ class PrinterManager
                 'session_id' => $validSessionId,
                 'printer_id' => $this->printerModel?->id,
                 'copies' => $copies,
-                'paper_size' => $paperSize,
+                'paper_size' => $resolvedPaperSize,
                 'status' => 'printing',
                 'progress' => 20,
                 'started_at' => now(),
@@ -74,8 +116,8 @@ class PrinterManager
         }
 
         $logMessage = $validSessionId
-            ? "Mencetak sesi {$validSessionId}, {$copies} salinan ({$paperSize})"
-            : "Mencetak uji coba printer (Test Print), {$copies} salinan ({$paperSize})";
+            ? "Mencetak sesi {$validSessionId}, {$copies} salinan ({$resolvedPaperSize})"
+            : "Mencetak uji coba printer (Test Print), {$copies} salinan ({$resolvedPaperSize})";
 
         try {
             DeviceLog::create([
@@ -84,13 +126,13 @@ class PrinterManager
                 'event' => 'printer.printing',
                 'message' => $logMessage,
                 'severity' => 'info',
-                'payload' => ['job_id' => $job?->id, 'copies' => $copies, 'paper_size' => $paperSize],
+                'payload' => ['job_id' => $job?->id, 'copies' => $copies, 'paper_size' => $resolvedPaperSize],
             ]);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning("Gagal menyimpan DeviceLog: " . $e->getMessage());
         }
 
-        $result = $this->getAdapter()->print($filePath, $copies, $paperSize);
+        $result = $this->getAdapter()->print($filePath, $copies, $resolvedPaperSize);
 
         if ($result['success']) {
             if ($job) {

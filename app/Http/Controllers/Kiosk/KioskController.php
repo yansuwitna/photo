@@ -37,12 +37,16 @@ class KioskController extends Controller
         if ($template) {
             $template->loadMissing('elements');
         }
-        $templates = Template::where('is_active', true)->with('elements')->get();
+        $printerManager = new \App\Services\Hardware\PrinterManager();
+        $activePrinter = $printerManager->getPrinterModel();
+        $activePaperSize = $printerManager->getActivePaperSize($template?->paper_size);
 
         return Inertia::render('Kiosk/Camera', [
             'session' => $session,
             'template' => $template,
             'templates' => $templates,
+            'active_printer' => $activePrinter,
+            'active_paper_size' => $activePaperSize,
         ]);
     }
 

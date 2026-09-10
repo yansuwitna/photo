@@ -34,6 +34,8 @@ const props = defineProps<{
     session: BoothSession;
     template: Template;
     templates?: Template[];
+    active_printer?: any;
+    active_paper_size?: string;
 }>();
 
 const audioStore = useAudioStore();
@@ -42,9 +44,25 @@ const sessionStore = useSessionStore();
 // Local Reactive States
 const currentSession = ref<BoothSession>(props.session);
 const currentTemplate = ref<Template>(props.template);
+const activePrinter = ref<any>(props.active_printer || null);
+const activePaperSize = ref<string>(props.active_paper_size || props.active_printer?.default_paper_size || '4R');
 
 // Step Navigation: 1 (Bentuk) | 2 (Jumlah Foto) | 3 (Template Admin) | 4 (Jepret) | 5 (Cetak)
 const currentStep = ref<1 | 2 | 3 | 4 | 5>(1);
+
+onMounted(async () => {
+    try {
+        const res = await axios.get('/api/devices/settings');
+        if (res.data?.active_printer) {
+            activePrinter.value = res.data.active_printer;
+        }
+        if (res.data?.active_paper_size) {
+            activePaperSize.value = res.data.active_paper_size;
+        } else if (res.data?.active_printer?.default_paper_size) {
+            activePaperSize.value = res.data.active_printer.default_paper_size;
+        }
+    } catch (e) {}
+});
 
 // Format Foto: 'strip' (Setengah 4R / 2x6") vs 'full' (Kertas 4R Utuh / 4x6")
 const selectedFormat = ref<'strip' | 'full'>('strip');
@@ -403,12 +421,13 @@ async function triggerPrint() {
     try {
         const res = await axios.post(`/api/session/${currentSession.value.id}/print`, {
             copies: printCopies.value,
+            paper_size: activePaperSize.value,
         });
 
         clearInterval(progInterval);
-        printProgress.value = 100;
 
         if (res.data.success) {
+            printProgress.value = 100;
             isPrinting.value = false;
             isPrintComplete.value = true;
             audioStore.playPrintDone();
@@ -418,11 +437,13 @@ async function triggerPrint() {
             }, 1600);
         } else {
             showPrintModal.value = false;
+            isPrinting.value = false;
             showError('Printer Bermasalah', res.data.message || 'Gagal mengirim dokumen ke printer.');
         }
     } catch (err: any) {
         clearInterval(progInterval);
         showPrintModal.value = false;
+        isPrinting.value = false;
         showError('Gagal Mencetak', err.response?.data?.message || 'Koneksi printer fisik terputus atau tidak terdeteksi.');
     }
 }
@@ -1020,8 +1041,30 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         <h3 class="text-2xl font-black text-slate-900 mt-1">Cetak & Unduh</h3>
                         <p class="text-xs text-slate-500 mt-1">Template: {{ currentTemplate.name }}</p>
 
+                        <!-- Active Printer Card Sesuai Pengaturan -->
+                        <div class="mt-4 p-3 rounded-2xl bg-sky-50/80 border border-sky-200/60 flex items-center justify-between">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-xl bg-sky-500/15 text-sky-600 flex items-center justify-center font-bold">
+                                    <Printer class="w-4 h-4" />
+                                </div>
+                                <div class="text-left">
+                                    <div class="text-xs font-black text-slate-800 line-clamp-1">
+                                        {{ activePrinter?.name || 'Printer Standar Windows' }}
+                                    </div>
+                                    <div class="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                                        <span>Kertas:</span>
+                                        <span class="font-black text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded">{{ activePaperSize || '4R' }}</span>
+                                        <span>• {{ activePrinter?.adapter === 'windows' ? 'Spooler Direct' : 'Photo DyeSub' }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-300">
+                                Siap
+                            </span>
+                        </div>
+
                         <!-- Number of Copies Picker -->
-                        <div class="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                        <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
                             <label class="text-xs font-semibold text-slate-700 block mb-3">Jumlah Lembar Cetak:</label>
                             <div class="flex items-center justify-between">
                                 <button
@@ -1039,7 +1082,7 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                                 </button>
                             </div>
                             <div class="text-[11px] text-slate-500 text-center mt-3">
-                                Ukuran Kertas: {{ currentTemplate?.paper_size || (selectedFormat === 'strip' ? 'Strip 2x6"' : '4R') }} Glossy Premium
+                                Format Kertas: <strong class="text-slate-700">{{ activePaperSize || currentTemplate?.paper_size || '4R' }}</strong> Glossy Premium
                             </div>
                         </div>
 

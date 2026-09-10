@@ -38,6 +38,7 @@ const props = defineProps<{
     printers?: any[];
     activeCamera?: any;
     activePrinter?: any;
+    activePaperSize?: string;
     isLocked?: boolean;
     todayStats: {
         total_sessions: number;
@@ -59,7 +60,7 @@ const selectedTemplateId = ref<number>(props.templates[0]?.id || 1);
 const isLocked = ref(props.isLocked ?? false);
 const selectedCameraId = ref(props.activeCamera?.id ?? props.cameras?.[0]?.id ?? 1);
 const selectedPrinterId = ref(props.activePrinter?.id ?? props.printers?.[0]?.id ?? 1);
-const selectedPaperSize = ref(props.activePrinter?.default_paper_size ?? '4R');
+const selectedPaperSize = ref(props.activePaperSize ?? props.activePrinter?.default_paper_size ?? '4R');
 const showUnlockModal = ref(false);
 const isSavingDevices = ref(false);
 const showDeviceSettings = ref(false);
@@ -95,6 +96,10 @@ async function refreshData() {
             }
             if (res.data.active_printer) {
                 selectedPrinterId.value = res.data.active_printer.id;
+            }
+            if (res.data.active_paper_size) {
+                selectedPaperSize.value = res.data.active_paper_size;
+            } else if (res.data.active_printer) {
                 selectedPaperSize.value = res.data.active_printer.default_paper_size || '4R';
             }
         }

@@ -195,7 +195,7 @@ class SessionManager
         return $result;
     }
 
-    public function printFinalPhoto(BoothSession $session, int $copies = 1): array
+    public function printFinalPhoto(BoothSession $session, int $copies = 1, ?string $requestedPaperSize = null): array
     {
         if (!$session->final_photo_path) {
             $composeRes = $this->composeTemplate($session);
@@ -211,9 +211,10 @@ class SessionManager
             $fullPath = \Illuminate\Support\Facades\Storage::path($finalRelPath);
         }
 
-        $paperSize = $session->template ? $session->template->paper_size : '4R';
-
         $printerManager = new PrinterManager();
+        $paperSize = $requestedPaperSize 
+            ?: $printerManager->getActivePaperSize($session->template?->paper_size);
+
         $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize);
 
         if ($printRes['success']) {

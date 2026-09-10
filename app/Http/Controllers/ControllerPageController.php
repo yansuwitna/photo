@@ -30,8 +30,11 @@ class ControllerPageController extends Controller
 
         $cameras = Camera::all();
         $printers = Printer::all();
-        $activeCamera = Camera::where('is_default', true)->first() ?? $cameras->first();
-        $activePrinter = Printer::where('is_default', true)->first() ?? $printers->first();
+        $activeCameraId = Setting::get('active_camera_id');
+        $activePrinterId = Setting::get('active_printer_id');
+        $activeCamera = ($activeCameraId ? Camera::find($activeCameraId) : null) ?? Camera::where('is_default', true)->first() ?? $cameras->first();
+        $activePrinter = ($activePrinterId ? Printer::find($activePrinterId) : null) ?? Printer::where('is_default', true)->first() ?? $printers->first();
+        $activePaperSize = Setting::get('active_printer_paper_size', $activePrinter?->default_paper_size ?? '4R');
         $isLocked = (bool)Setting::get('device_settings_locked', false);
 
         return Inertia::render('Controller/Index', [
@@ -41,6 +44,7 @@ class ControllerPageController extends Controller
             'printers' => $printers,
             'activeCamera' => $activeCamera,
             'activePrinter' => $activePrinter,
+            'activePaperSize' => $activePaperSize,
             'isLocked' => $isLocked,
             'todayStats' => [
                 'total_sessions' => $todaySessions,
@@ -57,14 +61,18 @@ class ControllerPageController extends Controller
             ->latest()
             ->first();
 
-        $activeCamera = Camera::where('is_default', true)->first();
-        $activePrinter = Printer::where('is_default', true)->first();
+        $activeCameraId = Setting::get('active_camera_id');
+        $activePrinterId = Setting::get('active_printer_id');
+        $activeCamera = ($activeCameraId ? Camera::find($activeCameraId) : null) ?? Camera::where('is_default', true)->first();
+        $activePrinter = ($activePrinterId ? Printer::find($activePrinterId) : null) ?? Printer::where('is_default', true)->first();
+        $activePaperSize = Setting::get('active_printer_paper_size', $activePrinter?->default_paper_size ?? '4R');
         $isLocked = (bool)Setting::get('device_settings_locked', false);
 
         return response()->json([
             'active_session' => $activeSession,
             'active_camera' => $activeCamera,
             'active_printer' => $activePrinter,
+            'active_paper_size' => $activePaperSize,
             'is_locked' => $isLocked,
         ]);
     }

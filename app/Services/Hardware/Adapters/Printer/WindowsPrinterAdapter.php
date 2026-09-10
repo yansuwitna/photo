@@ -108,20 +108,36 @@ class WindowsPrinterAdapter implements PrinterInterface
 
                 if (is_array($json)) {
                     return [
-                        'success' => $json['success'] ?? false,
-                        'message' => $json['message'] ?? "Dokumen dikirim ke printer {$this->name}.",
+                        'success' => (bool)($json['success'] ?? false),
+                        'message' => $json['message'] ?? (($json['success'] ?? false) ? "Dokumen dikirim ke printer {$this->name}." : "Gagal mencetak ke printer {$this->name}."),
                         'printer' => $json['printer'] ?? $this->name,
                         'job_id' => 'WIN-' . time(),
                         'copies' => $copies,
-                        'paper_size' => $paperSize,
+                        'paper_size' => $json['paper_size'] ?? $paperSize,
+                        'pdf_path' => $json['pdf_path'] ?? null,
                     ];
                 }
+
+                \Illuminate\Support\Facades\Log::error("PowerShell Print Output Error: " . $rawResult);
+                return [
+                    'success' => false,
+                    'message' => "Gagal berkomunikasi dengan spooler printer: " . ($rawResult ?: 'Tidak ada respon dari Windows.'),
+                    'printer' => $this->name,
+                ];
             }
         }
 
-        // Fallback untuk testing jika script tidak berjalan
-        $mock = new MockPrinter();
-        return $mock->print($filePath, $copies, $paperSize);
+        // Fallback untuk server pengembang non-Windows (misal Linux Docker / CI)
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $mock = new MockPrinter();
+            return $mock->print($filePath, $copies, $paperSize);
+        }
+
+        return [
+            'success' => false,
+            'message' => "File cetak tidak ditemukan atau script cetak tidak tersedia: {$filePath}",
+            'printer' => $this->name,
+        ];
     }
 
     public function cancelPrint(string $jobId): bool { return true; }
