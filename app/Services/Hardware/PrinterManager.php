@@ -132,6 +132,25 @@ class PrinterManager
             \Illuminate\Support\Facades\Log::warning("Gagal menyimpan DeviceLog: " . $e->getMessage());
         }
 
+        // Jika printer terdaftar sebagai remote agent (atau server berjalan online di Linux)
+        $isRemoteAgent = str_contains(strtolower($this->printerModel?->connection_type ?? ''), 'pc') 
+            || (PHP_OS_FAMILY !== 'Windows' && $this->printerModel?->adapter === 'windows');
+
+        if ($isRemoteAgent) {
+            if ($job) {
+                $job->update(['status' => 'pending', 'progress' => 10]);
+            }
+            return [
+                'success' => true,
+                'status' => 'pending',
+                'message' => "Pekerjaan cetak dikirim ke antrean remote agent di PC lokal ({$this->printerModel?->name}).",
+                'printer' => $this->printerModel?->name,
+                'print_job_id' => $job?->id,
+                'copies' => $copies,
+                'paper_size' => $resolvedPaperSize,
+            ];
+        }
+
         $result = $this->getAdapter()->print($filePath, $copies, $resolvedPaperSize);
 
         if ($result['success']) {

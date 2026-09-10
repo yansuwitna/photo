@@ -218,7 +218,8 @@ class SessionManager
         $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize);
 
         if ($printRes['success']) {
-            $session->update(['print_status' => 'printed']);
+            $status = ($printRes['status'] ?? '') === 'pending' ? 'printing' : 'printed';
+            $session->update(['print_status' => $status]);
         } else {
             $session->update(['print_status' => 'failed', 'error_message' => $printRes['message'] ?? 'Gagal cetak']);
         }

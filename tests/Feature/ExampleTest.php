@@ -263,6 +263,48 @@ class ExampleTest extends TestCase
         $this->assertEquals('printed', $session->fresh()->print_status);
         $this->assertEquals(2, $session->fresh()->print_copies);
     }
+
+    public function test_kiosk_camera_page_loads_with_required_props(): void
+    {
+        $user = User::factory()->create();
+        $event = \App\Models\Event::create([
+            'name' => 'Event Camera Test',
+            'slug' => 'event-camera-test',
+            'is_active' => true,
+        ]);
+
+        $template = \App\Models\Template::create([
+            'event_id' => $event->id,
+            'name' => 'Template 1',
+            'slug' => 'template-1',
+            'width' => 1200,
+            'height' => 1800,
+            'paper_size' => '4R',
+            'is_active' => true,
+        ]);
+
+        $session = \App\Models\BoothSession::create([
+            'session_code' => 'PB-CAM-01',
+            'event_id' => $event->id,
+            'template_id' => $template->id,
+            'total_photos_required' => 3,
+            'photos_captured_count' => 0,
+            'status' => 'active',
+            'current_step' => 'camera',
+            'payment_status' => 'paid',
+        ]);
+
+        $res = $this->actingAs($user)->get("/session/{$session->id}/camera");
+        $res->assertStatus(200);
+        $res->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->component('Kiosk/Camera')
+            ->has('session')
+            ->has('template')
+            ->has('templates')
+            ->has('active_printer')
+            ->has('active_paper_size')
+        );
+    }
 }
 
 

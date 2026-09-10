@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\SessionApiController;
 use App\Http\Controllers\Api\DeviceApiController;
 use App\Http\Controllers\Api\PromoApiController;
 use App\Http\Controllers\Api\FrameApiController;
+use App\Http\Controllers\Api\PrintAgentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -103,6 +104,11 @@ Route::middleware(['auth'])->group(function () {
 
         // Promo API
         Route::post('/promo/check', [PromoApiController::class, 'check']);
+
+        // Remote Print Bridge Agent API (Cloud to Local PC Printer)
+        Route::post('/agent/sync-printers', [PrintAgentController::class, 'syncPrinters']);
+        Route::get('/agent/jobs', [PrintAgentController::class, 'getPendingJobs']);
+        Route::post('/agent/jobs/{jobId}/update', [PrintAgentController::class, 'updateJob']);
 
         // Admin API
         Route::post('/admin/events', [EventController::class, 'store']);
