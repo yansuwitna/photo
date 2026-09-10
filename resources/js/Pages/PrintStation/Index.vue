@@ -138,17 +138,23 @@ async function executePrintJob(job: PrintJobItem) {
             audioStore.playBeep(784, 0.15, 'sine');
         }
 
-        // 2. Preload gambar foto untuk memastikan tidak blank
+        // 2. Preload gambar foto dan konversi ke Blob URL untuk menjamin tersedia di RAM
         if (!job.file_url) {
             throw new Error('URL foto tidak ditemukan pada antrean.');
         }
 
-        await preloadImage(job.file_url);
+        const safeUrl = resolvePhotoUrl(job.file_url);
+        const resolvedBlobUrl = await preloadImage(safeUrl);
         printProgress.value = 70;
 
-        // 3. Render ke dalam Hidden Iframe
-        await printViaIframe(job);
+        // 3. Render ke dalam Hidden Iframe dan tunggu decoding gambar selesai
+        await printViaIframe(job, resolvedBlobUrl);
         printProgress.value = 95;
+
+        // Bersihkan blob URL
+        if (resolvedBlobUrl && resolvedBlobUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(resolvedBlobUrl);
+        }
 
         // 4. Update status job menjadi completed
         await axios.post(`/api/print-station/jobs/${job.id}/update`, {
@@ -194,30 +200,69 @@ async function executePrintJob(job: PrintJobItem) {
     }
 }
 
-// Preload helper
-function preloadImage(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error('Gagal memuat gambar foto untuk dicetak.'));
-        img.src = url;
-    });
+// Helper untuk memastikan URL selalu terhubung ke Host dan Port aktif browser
+function resolvePhotoUrl(rawUrl?: string): string {
+    if (!rawUrl) return '';
+    if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:')) return rawUrl;
+    
+    // Jika URL absolut tapi beda port/host, arahkan ke origin browser saat ini
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+        try {
+            const parsed = new URL(rawUrl);
+            return window.location.origin + parsed.pathname + parsed.search;
+        } catch (e) {
+            return rawUrl;
+        }
+    }
+    
+    if (rawUrl.startsWith('/')) {
+        return window.location.origin + rawUrl;
+    }
+    return window.location.origin + '/' + rawUrl;
 }
 
-// Cetak melalui hidden iframe dengan styling @media print akurat
-function printViaIframe(job: PrintJobItem): Promise<void> {
-    return new Promise((resolve) => {
+// Preload helper dengan Fetch Blob untuk menyimpan gambar langsung di memori lokal
+async function preloadImage(url: string): Promise<string> {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const blob = await res.blob();
+        if (blob.size === 0) throw new Error('File foto berukuran 0 byte.');
+        return URL.createObjectURL(blob);
+    } catch (err) {
+        console.warn('Fetch blob fallback ke Image() decode:', err);
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = async () => {
+                if (img.decode) {
+                    try { await img.decode(); } catch (e) {}
+                }
+                resolve(url);
+            };
+            img.onerror = () => reject(new Error('Gagal memuat gambar foto untuk dicetak dari: ' + url));
+            img.src = url;
+        });
+    }
+}
+
+// Cetak melalui hidden iframe dengan styling @media print akurat dan anti-blank
+function printViaIframe(job: PrintJobItem, imageUrl: string): Promise<void> {
+    return new Promise(async (resolve) => {
         let iframe = document.getElementById('web-print-station-iframe') as HTMLIFrameElement;
         if (!iframe) {
             iframe = document.createElement('iframe');
             iframe.id = 'web-print-station-iframe';
+            // PENTING: Jangan gunakan width: 0 / height: 0 karena Chromium akan menganggap viewport kosong (blank)!
             iframe.style.position = 'fixed';
-            iframe.style.right = '100%';
-            iframe.style.bottom = '100%';
-            iframe.style.width = '0';
-            iframe.style.height = '0';
+            iframe.style.top = '0';
+            iframe.style.left = '0';
+            iframe.style.width = '100vw';
+            iframe.style.height = '100vh';
             iframe.style.border = '0';
+            iframe.style.opacity = '0';
+            iframe.style.pointerEvents = 'none';
+            iframe.style.zIndex = '-9999';
             document.body.appendChild(iframe);
         }
 
@@ -245,7 +290,7 @@ function printViaIframe(job: PrintJobItem): Promise<void> {
         for (let i = 0; i < copies; i++) {
             pagesHtml += `
                 <div class="print-page">
-                    <img src="${job.file_url}" alt="Print Job Photo" />
+                    <img src="${imageUrl}" alt="Print Photo" />
                 </div>
             `;
         }
@@ -260,35 +305,44 @@ function printViaIframe(job: PrintJobItem): Promise<void> {
                 <style>
                     @page {
                         size: ${pageSizeCss};
-                        margin: 0;
+                        margin: 0mm;
                     }
-                    * {
+                    *, *:before, *:after {
                         box-sizing: border-box;
-                    }
-                    html, body {
                         margin: 0;
                         padding: 0;
-                        width: 100%;
-                        height: 100%;
-                        background-color: #ffffff;
+                    }
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        background-color: #ffffff !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
                     .print-page {
-                        width: 100vw;
-                        height: 100vh;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        page-break-after: always;
-                        overflow: hidden;
+                        width: 100% !important;
+                        height: 100vh !important;
+                        max-height: 100% !important;
+                        page-break-inside: avoid !important;
+                        page-break-after: always !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        overflow: hidden !important;
                     }
                     .print-page:last-child {
-                        page-break-after: auto;
+                        page-break-after: auto !important;
                     }
-                    img {
-                        width: 100%;
-                        height: 100%;
-                        object-fit: contain;
-                        display: block;
+                    .print-page img {
+                        max-width: 100% !important;
+                        max-height: 100% !important;
+                        width: auto !important;
+                        height: auto !important;
+                        object-fit: contain !important;
+                        display: block !important;
+                        margin: auto !important;
                     }
                 </style>
             </head>
@@ -299,7 +353,25 @@ function printViaIframe(job: PrintJobItem): Promise<void> {
         `);
         doc.close();
 
-        // Beri waktu 300ms agar browser selesai me-layout dokumen sebelum print
+        // Tunggu hingga seluruh tag <img> di dalam iframe benar-benar ter-load & ter-decode
+        try {
+            const imgs = Array.from(doc.getElementsByTagName('img'));
+            await Promise.all(imgs.map(img => {
+                if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+                return new Promise((res) => {
+                    img.onload = () => res(true);
+                    img.onerror = () => res(false);
+                    setTimeout(() => res(true), 2500); // safety fallback
+                });
+            }));
+
+            // Decode gambar untuk memastikan rasterizer GPU selesai
+            await Promise.all(imgs.map(img => img.decode ? img.decode().catch(() => {}) : Promise.resolve()));
+        } catch (e) {
+            console.warn('Image decode wait warning:', e);
+        }
+
+        // Beri jeda 350ms agar browser selesai menyusun layer layout visual
         setTimeout(() => {
             try {
                 iframe.contentWindow?.focus();
@@ -307,11 +379,11 @@ function printViaIframe(job: PrintJobItem): Promise<void> {
             } catch (e) {
                 console.warn('Iframe print warning:', e);
             }
-            // Selesaikan promise
+            // Selesaikan promise setelah print dialog/spooler terkirim
             setTimeout(() => {
                 resolve();
-            }, 600);
-        }, 300);
+            }, 800);
+        }, 350);
     });
 }
 

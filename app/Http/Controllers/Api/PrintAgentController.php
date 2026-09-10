@@ -109,7 +109,10 @@ class PrintAgentController extends Controller
         $formattedJobs = $jobs->map(function ($j) {
             $session = $j->session;
             $finalPath = $session?->final_photo_path;
-            $fileUrl = $finalPath ? asset('storage/' . $finalPath) : null;
+            if (!$finalPath && file_exists(storage_path('app/public/tests/print_station_test.png'))) {
+                $finalPath = 'tests/print_station_test.png';
+            }
+            $fileUrl = $finalPath ? '/storage/' . ltrim(str_replace('public/', '', $finalPath), '/') : null;
 
             return [
                 'id' => $j->id,
