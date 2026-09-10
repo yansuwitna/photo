@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { Camera, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-vue-next';
+import ThemeToggle from '@/Components/ThemeToggle.vue';
 
 const form = useForm({
     email: 'admin@photobooth.pro',
@@ -25,8 +26,12 @@ function fillCredentials(role: 'admin' | 'operator') {
 </script>
 
 <template>
-    <div class="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4 font-sans select-none">
-        <div class="w-full max-w-md rounded-3xl bg-slate-900 border border-white/10 p-8 shadow-2xl flex flex-col items-center">
+    <div class="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-4 font-sans select-none relative">
+        <div class="absolute top-4 right-4 z-10">
+            <ThemeToggle />
+        </div>
+
+        <div class="w-full max-w-md rounded-3xl bg-slate-900 border border-white/10 p-6 sm:p-8 shadow-2xl flex flex-col items-center">
             <!-- Brand Icon -->
             <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 shadow-[0_0_35px_rgba(245,158,11,0.4)] mb-4">
                 <Camera class="w-8 h-8" />

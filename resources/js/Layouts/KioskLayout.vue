@@ -4,10 +4,13 @@ import { usePage } from '@inertiajs/vue3';
 import { Lock, Camera, Printer, Maximize, Minimize } from 'lucide-vue-next';
 import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
 import KioskPinModal from '@/Components/KioskPinModal.vue';
+import ThemeToggle from '@/Components/ThemeToggle.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { useThemeStore } from '@/stores/themeStore';
 
 const page = usePage();
 const deviceStore = useDeviceStore();
+const themeStore = useThemeStore();
 
 const showPinModal = ref(false);
 const isFullscreen = ref(false);
@@ -15,6 +18,7 @@ const isFullscreen = ref(false);
 const activeEvent = page.props.active_event as any;
 
 onMounted(() => {
+    themeStore.initTheme();
     deviceStore.fetchStatus();
     // Polling status perangkat tiap 15 detik
     setInterval(() => {
@@ -35,14 +39,14 @@ function toggleFullscreen() {
 </script>
 
 <template>
-    <div class="relative w-screen h-screen overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white flex flex-col select-none">
+    <div class="relative w-full min-h-screen min-h-[100dvh] overflow-x-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 kiosk-gradient-bg text-slate-100 flex flex-col select-none">
         <!-- TOP MINIMAL KIOSK HEADER -->
-        <header class="relative z-40 flex items-center justify-between px-8 py-4 bg-slate-950/40 backdrop-blur-md border-b border-white/5">
+        <header class="relative z-40 flex items-center justify-between px-3 sm:px-8 py-2.5 sm:py-3.5 bg-slate-950/40 backdrop-blur-md border-b border-white/5 mobile-safe-top">
             <!-- Left: Brand & Event Info -->
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 sm:gap-4">
                 <div class="flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                    <h1 class="font-black text-lg tracking-wider bg-gradient-to-r from-amber-300 via-white to-amber-200 bg-clip-text text-transparent">
+                    <h1 class="font-black text-sm sm:text-lg tracking-wider bg-gradient-to-r from-amber-400 via-amber-200 to-amber-500 bg-clip-text text-transparent">
                         PHOTOBOOTH PRO
                     </h1>
                 </div>
@@ -53,12 +57,15 @@ function toggleFullscreen() {
                 </div>
             </div>
 
-            <!-- Right: Device Indicators & Control -->
-            <div class="flex items-center gap-3">
-                <div class="hidden sm:flex items-center gap-2">
+            <!-- Right: Device Indicators & Controls -->
+            <div class="flex items-center gap-1.5 sm:gap-3">
+                <div class="hidden lg:flex items-center gap-2">
                     <DeviceStatusBadge :status="deviceStore.camera.status" label="Kamera" size="sm" />
                     <DeviceStatusBadge :status="deviceStore.printer.status" label="Printer" size="sm" />
                 </div>
+
+                <!-- Theme Toggle Button (Mode Terang / Gelap) -->
+                <ThemeToggle />
 
                 <button
                     @click="toggleFullscreen"
@@ -72,7 +79,7 @@ function toggleFullscreen() {
                 <!-- Kiosk Exit / Settings Lock Button -->
                 <button
                     @click="showPinModal = true"
-                    class="p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-all flex items-center gap-1 text-xs font-semibold"
+                    class="p-2 sm:p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-all flex items-center gap-1 text-xs font-semibold"
                     title="Beralih ke Operator/Admin"
                 >
                     <Lock class="w-3.5 h-3.5" />
@@ -82,7 +89,7 @@ function toggleFullscreen() {
         </header>
 
         <!-- MAIN KIOSK VIEWPORT -->
-        <main class="relative flex-1 w-full h-full overflow-hidden flex flex-col">
+        <main class="relative flex-1 w-full flex flex-col overflow-y-auto sm:overflow-hidden">
             <slot />
         </main>
 

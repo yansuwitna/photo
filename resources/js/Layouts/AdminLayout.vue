@@ -20,6 +20,7 @@ import {
     Printer
 } from 'lucide-vue-next';
 import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
+import ThemeToggle from '@/Components/ThemeToggle.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 
 const page = usePage();
@@ -65,14 +66,25 @@ function launchController() {
                 <span class="w-3 h-3 rounded-full bg-amber-400"></span>
                 <span class="font-bold text-white tracking-wider">PHOTOBOOTH PRO</span>
             </div>
-            <button
-                @click="sidebarOpen = !sidebarOpen"
-                class="p-2 rounded-lg bg-white/10 text-slate-300"
-            >
-                <X v-if="sidebarOpen" class="w-6 h-6" />
-                <Menu v-else class="w-6 h-6" />
-            </button>
+            <div class="flex items-center gap-2">
+                <ThemeToggle />
+                <button
+                    @click="sidebarOpen = !sidebarOpen"
+                    class="p-2 rounded-lg bg-white/10 text-slate-300 hover:text-white"
+                    aria-label="Toggle Menu"
+                >
+                    <X v-if="sidebarOpen" class="w-6 h-6" />
+                    <Menu v-else class="w-6 h-6" />
+                </button>
+            </div>
         </header>
+
+        <!-- BACKDROP OVERLAY FOR MOBILE -->
+        <div 
+            v-if="sidebarOpen" 
+            @click="sidebarOpen = false" 
+            class="fixed inset-0 bg-black/60 backdrop-blur-xs z-30 md:hidden transition-opacity"
+        ></div>
 
         <!-- SIDEBAR -->
         <aside
@@ -115,6 +127,7 @@ function launchController() {
                     v-for="item in navigation"
                     :key="item.name"
                     :href="item.href"
+                    @click="sidebarOpen = false"
                     class="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold transition-all"
                     :class="[
                         isCurrentRoute(item.href)
@@ -167,18 +180,19 @@ function launchController() {
                 </div>
 
                 <div class="flex items-center gap-4">
+                    <ThemeToggle />
                     <DeviceStatusBadge :status="deviceStore.camera.status" label="Kamera" size="sm" />
                     <DeviceStatusBadge :status="deviceStore.printer.status" label="Printer" size="sm" />
                 </div>
             </header>
 
             <!-- FLASH ALERTS -->
-            <div v-if="page.props.flash?.message" class="mx-8 mt-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <div v-if="page.props.flash?.message" class="mx-4 sm:mx-8 mt-4 sm:mt-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                 <CheckCircle2 class="w-4 h-4" />
                 <span>{{ page.props.flash.message }}</span>
             </div>
 
-            <main class="flex-1 p-6 md:p-8">
+            <main class="flex-1 p-4 sm:p-6 md:p-8">
                 <slot />
             </main>
         </div>

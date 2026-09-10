@@ -13,7 +13,7 @@ class BoothSession extends Model
 
     protected $fillable = [
         'id', 'session_code', 'event_id', 'template_id', 'camera_id',
-        'printer_id', 'operator_id', 'customer_name', 'customer_phone',
+        'printer_id', 'operator_id', 'booth_id', 'customer_name', 'customer_phone',
         'customer_email', 'status', 'total_photos_required',
         'photos_captured_count', 'current_step', 'final_photo_path',
         'final_thumbnail_path', 'digital_code', 'qr_code_url',

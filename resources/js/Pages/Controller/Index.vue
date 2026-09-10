@@ -26,6 +26,7 @@ import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
 import CameraTestModal from '@/Components/CameraTestModal.vue';
 import DeviceLockModal from '@/Components/DeviceLockModal.vue';
 import ControllerCaptureModal from '@/Components/ControllerCaptureModal.vue';
+import ThemeToggle from '@/Components/ThemeToggle.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getAssetUrl } from '@/utils/url';
 import axios from 'axios';
@@ -254,39 +255,40 @@ async function runPrinterTest() {
 <template>
     <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col p-4 md:p-6 select-none font-sans">
         <!-- TOP HEADER -->
-        <header class="flex items-center justify-between pb-4 border-b border-white/10">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-amber-400/20 border border-amber-400/30 flex items-center justify-center text-amber-400">
+        <header class="flex flex-wrap items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-white/10">
+            <div class="flex items-center gap-2.5 sm:gap-3">
+                <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-400/20 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Tablet class="w-5 h-5" />
                 </div>
                 <div>
-                    <h1 class="text-base md:text-lg font-black text-white">REMOTE OPERATOR CONTROLLER</h1>
-                    <p class="text-xs text-slate-400">Panel Kontrol Nirkabel Tablet / Operator Booth</p>
+                    <h1 class="text-sm sm:text-base md:text-lg font-black text-white">OPERATOR CONTROLLER</h1>
+                    <p class="text-[11px] text-slate-400 hidden sm:block">Panel Kontrol Nirkabel Tablet / Operator Booth</p>
                 </div>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <ThemeToggle />
                 <button
                     @click="refreshData"
-                    class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300"
+                    class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 active:scale-95 transition-all"
                     title="Refresh"
                 >
                     <RefreshCw class="w-4 h-4" />
                 </button>
                 <button
                     @click="router.visit('/print-station')"
-                    class="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
+                    class="py-2 px-2.5 sm:px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95"
                     title="Buka Web Print Station untuk cetak otomatis di PC ini"
                 >
                     <Printer class="w-3.5 h-3.5 text-amber-400" />
-                    <span>Print Station</span>
+                    <span class="hidden xs:inline sm:inline">Print</span>
                 </button>
                 <button
                     @click="router.visit('/')"
-                    class="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold flex items-center gap-1.5"
+                    class="py-2 px-2.5 sm:px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all"
                 >
                     <Home class="w-3.5 h-3.5" />
-                    <span>Kiosk Layar</span>
+                    <span class="hidden xs:inline sm:inline">Kiosk</span>
                 </button>
             </div>
         </header>
@@ -563,7 +565,7 @@ async function runPrinterTest() {
                     </div>
 
                     <!-- Actions Bar -->
-                    <div class="pt-4 border-t border-white/10 flex items-center justify-between gap-3">
+                    <div class="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
                         <button
                             v-if="activeSession.final_photo_path"
                             @click="triggerRemotePrint"
@@ -586,7 +588,7 @@ async function runPrinterTest() {
 
                         <button
                             @click="router.visit(`/session/${activeSession.id}/camera`)"
-                            class="py-3.5 px-6 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10"
+                            class="py-3 sm:py-3.5 px-4 sm:px-6 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/10 text-center transition-all active:scale-95"
                         >
                             Buka Tampilan Kiosk
                         </button>

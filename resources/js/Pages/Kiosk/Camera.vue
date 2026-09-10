@@ -995,22 +995,22 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                     <button
                         v-if="captureStage === 'ready'"
                         @click="startCapture(currentSlotIndex)"
-                        class="px-12 md:px-16 py-4 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-pink-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-lg md:text-xl tracking-wider shadow-lg shadow-pink-500/40 flex items-center gap-3 transition-all transform active:scale-95 hover:scale-105"
+                        class="px-6 sm:px-12 md:px-16 py-3.5 sm:py-4 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-pink-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-sm sm:text-lg md:text-xl tracking-wider shadow-lg shadow-pink-500/40 flex items-center gap-2.5 sm:gap-3 transition-all transform active:scale-95 hover:scale-105 cursor-pointer"
                     >
-                        <Camera class="w-6 h-6 stroke-[2.5]" />
+                        <Camera class="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
                         <span>AMBIL FOTO KE-{{ currentSlotIndex }}</span>
                     </button>
 
                     <div
                         v-else-if="captureStage === 'countdown'"
-                        class="px-10 py-4 rounded-full bg-pink-500 text-white font-black text-xl flex items-center gap-2 shadow-lg shadow-pink-500/40 animate-pulse"
+                        class="px-8 sm:px-10 py-3.5 sm:py-4 rounded-full bg-pink-500 text-white font-black text-lg sm:text-xl flex items-center gap-2 shadow-lg shadow-pink-500/40 animate-pulse"
                     >
                         <span>SENYUM! ( {{ countdown }} )</span>
                     </div>
 
                     <div
                         v-else-if="captureStage === 'capturing'"
-                        class="px-10 py-4 rounded-full bg-slate-900 text-white font-black text-xl flex items-center gap-2 shadow-lg"
+                        class="px-8 sm:px-10 py-3.5 sm:py-4 rounded-full bg-slate-900 text-white font-black text-lg sm:text-xl flex items-center gap-2 shadow-lg"
                     >
                         <span>MEMPROSES...</span>
                     </div>
@@ -1022,7 +1022,7 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
             <!-- ========================================================================= -->
             <div 
                 v-else-if="currentStep === 5"
-                class="flex-1 flex flex-col md:flex-row items-center justify-between gap-8 max-w-6xl mx-auto w-full h-full overflow-hidden p-6"
+                class="flex-1 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8 max-w-6xl mx-auto w-full h-full overflow-y-auto md:overflow-hidden p-4 sm:p-6"
             >
                 <!-- Left: Final 300 DPI Composite Preview Card -->
                 <div class="flex-1 h-full max-h-[78vh] flex items-center justify-center">

@@ -428,6 +428,66 @@ class ExampleTest extends TestCase
         $pendingIds = collect($stationJobs->json('pending_jobs'))->pluck('session_id')->all();
         $this->assertContains($session->id, $pendingIds);
     }
+
+    public function test_multi_stand_auto_print_isolation(): void
+    {
+        $user = User::factory()->create();
+
+        // 1. Mulai sesi dari Stand 1 dan Stand 2
+        $resStand1 = $this->actingAs($user)->postJson('/api/session/start', [
+            'booth_id' => 'STAND-01',
+        ]);
+        $resStand1->assertStatus(200);
+        $session1Id = $resStand1->json('session.id');
+        $this->assertEquals('STAND-01', $resStand1->json('session.booth_id'));
+
+        $resStand2 = $this->actingAs($user)->postJson('/api/session/start', [
+            'booth_id' => 'STAND-02',
+        ]);
+        $resStand2->assertStatus(200);
+        $session2Id = $resStand2->json('session.id');
+        $this->assertEquals('STAND-02', $resStand2->json('session.booth_id'));
+
+        // 2. Buat PrintJob untuk masing-masing stand
+        $job1 = \App\Models\PrintJob::create([
+            'session_id' => $session1Id,
+            'booth_id' => 'STAND-01',
+            'copies' => 1,
+            'paper_size' => '4R',
+            'status' => 'pending',
+            'progress' => 0,
+        ]);
+
+        $job2 = \App\Models\PrintJob::create([
+            'session_id' => $session2Id,
+            'booth_id' => 'STAND-02',
+            'copies' => 2,
+            'paper_size' => '4R',
+            'status' => 'pending',
+            'progress' => 0,
+        ]);
+
+        // 3. Auto-Print Stand 1 hanya boleh menerima Job 1
+        $station1Jobs = $this->actingAs($user)->getJson('/api/print-station/jobs?booth=STAND-01');
+        $station1Jobs->assertStatus(200);
+        $pending1Ids = collect($station1Jobs->json('pending_jobs'))->pluck('id')->all();
+        $this->assertContains($job1->id, $pending1Ids);
+        $this->assertNotContains($job2->id, $pending1Ids);
+
+        // 4. Auto-Print Stand 2 hanya boleh menerima Job 2
+        $station2Jobs = $this->actingAs($user)->getJson('/api/print-station/jobs?booth=STAND-02');
+        $station2Jobs->assertStatus(200);
+        $pending2Ids = collect($station2Jobs->json('pending_jobs'))->pluck('id')->all();
+        $this->assertContains($job2->id, $pending2Ids);
+        $this->assertNotContains($job1->id, $pending2Ids);
+
+        // 5. Auto-Print Semua Stand (Global) menerima kedua job
+        $allJobs = $this->actingAs($user)->getJson('/api/print-station/jobs?booth=all');
+        $allJobs->assertStatus(200);
+        $allPendingIds = collect($allJobs->json('pending_jobs'))->pluck('id')->all();
+        $this->assertContains($job1->id, $allPendingIds);
+        $this->assertContains($job2->id, $allPendingIds);
+    }
 }
 
 

@@ -2,8 +2,26 @@
 <html lang="id" class="h-full bg-slate-950 text-slate-100 antialiased select-none">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title inertia>PHOTOBOOTH PRO - Studio Photo System</title>
+    
+    <!-- Inline Anti-FOUC Theme Script -->
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('photobooth_theme') || 'dark';
+                if (theme === 'light') {
+                    document.documentElement.classList.add('light');
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.setAttribute('data-theme', 'light');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.classList.remove('light');
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                }
+            } catch(e) {}
+        })();
+    </script>
     
     <!-- Google Fonts: Poppins -->
     <link rel="preconnect" href="https://fonts.googleapis.com">

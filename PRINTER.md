@@ -33,3 +33,26 @@ Printer Dye-Sublimation seperti DNP DS-RX1HS memiliki ribbon berkapasitas 700 le
   - 🟢 **Normal**: Sisa > 20 lembar.
   - 🟡 **Kertas Menipis**: Sisa <= 20 lembar (peringatan untuk operator).
   - 🔴 **Kertas Habis**: Cetak dinonaktifkan sementara dan dialog penggantian kertas muncul di panel operator.
+
+---
+
+## 4. Konfigurasi Multi-Stand & Multi-Printer (1 Stand 1 Printer)
+
+Jika Anda menggunakan lebih dari 1 stand foto di lokasi event, dan setiap stand memiliki printer masing-masing:
+
+### A. Konsep Kerja
+1. **Layar Kiosk (Pengunjung)**: Mengambil foto, memilih frame, dan submit sesi. Sesi dan job cetak otomatis diberi tag identitas stand (`booth_id`: `STAND-01`, `STAND-02`, dst.). Layar Kiosk langsung kembali ke menu awal tanpa menunggu printer fisik selesai bergulir.
+2. **Auto-Print Station (Background Worker)**:
+   - Dibuka di latar belakang pada laptop stand yang terhubung printer fisik.
+   - URL: `http://localhost:8000/print-station?booth=STAND-01`
+   - Dijalankan dengan Chrome/Edge `--kiosk-printing` agar pencetakan berlangsung secara senyap (*silent print*) tanpa pop-up dialog print Windows.
+   - Hanya menyedot dan mencetak antrean foto yang ditujukan khusus untuk stand tersebut.
+
+### B. Cara Menjalankan Cepat
+* **Laptop Stand 1 (Host Server + Printer Stand 1)**:
+  Jalankan file [start-stand1.bat](file:///D:/PROGRAMER/WEB/photo/start-stand1.bat)
+* **Laptop Stand 2 / Client (Terhubung Printer Stand 2)**:
+  Jalankan file [start-stand-client.bat](file:///D:/PROGRAMER/WEB/photo/start-stand-client.bat)
+  Masukkan IP server (misal `192.168.1.100`) dan pilih `STAND-02`.
+* **Ubah Stand Manual via UI**:
+  Pada layar awal Kiosk, klik tombol badge **STAND: STAND-01** di bagian atas untuk mengganti ke stand lain kapan saja.

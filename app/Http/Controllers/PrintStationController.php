@@ -14,22 +14,45 @@ use Inertia\Response;
 
 class PrintStationController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         // Otomatis aktifkan flag web print station jika diakses
         Setting::set('web_print_station_enabled', '1', 'hardware');
+
+        $selectedBooth = $request->query('booth', 'STAND-01');
 
         $printerManager = new PrinterManager();
         $activePrinter = $printerManager->getPrinterModel();
         $activePaperSize = $printerManager->getActivePaperSize();
 
-        $todayJobsCount = PrintJob::whereDate('created_at', today())->count();
-        $todayCompletedCount = PrintJob::whereDate('created_at', today())->where('status', 'completed')->sum('copies');
+        $todayJobsQuery = PrintJob::whereDate('created_at', today());
+        $todayCompletedQuery = PrintJob::whereDate('created_at', today())->where('status', 'completed');
+
+        if ($selectedBooth && $selectedBooth !== 'all') {
+            $todayJobsQuery->where(function($q) use ($selectedBooth) {
+                $q->where('booth_id', $selectedBooth)->orWhereNull('booth_id');
+            });
+            $todayCompletedQuery->where(function($q) use ($selectedBooth) {
+                $q->where('booth_id', $selectedBooth)->orWhereNull('booth_id');
+            });
+        }
+
+        $todayJobsCount = $todayJobsQuery->count();
+        $todayCompletedCount = $todayCompletedQuery->sum('copies');
+
+        $availableBooths = collect(['STAND-01', 'STAND-02'])
+            ->merge(BoothSession::whereNotNull('booth_id')->distinct()->pluck('booth_id'))
+            ->merge(PrintJob::whereNotNull('booth_id')->distinct()->pluck('booth_id'))
+            ->unique()
+            ->values()
+            ->toArray();
 
         return Inertia::render('PrintStation/Index', [
             'active_printer' => $activePrinter,
             'active_paper_size' => $activePaperSize,
             'web_station_enabled' => true,
+            'selected_booth' => $selectedBooth,
+            'available_booths' => $availableBooths,
             'stats' => [
                 'today_jobs' => $todayJobsCount,
                 'today_completed' => (int)$todayCompletedCount,
@@ -37,10 +60,26 @@ class PrintStationController extends Controller
         ]);
     }
 
-    public function jobs(): JsonResponse
+    public function jobs(Request $request): JsonResponse
     {
-        $pendingJobs = PrintJob::with(['session.template', 'session.event', 'printer'])
-            ->whereIn('status', ['pending', 'queued'])
+        $booth = $request->query('booth');
+
+        $pendingQuery = PrintJob::with(['session.template', 'session.event', 'printer'])
+            ->whereIn('status', ['pending', 'queued']);
+
+        $recentQuery = PrintJob::with(['session.template', 'printer'])
+            ->whereIn('status', ['completed', 'printing', 'failed']);
+
+        if ($booth && $booth !== 'all') {
+            $pendingQuery->where(function($q) use ($booth) {
+                $q->where('booth_id', $booth)->orWhereNull('booth_id');
+            });
+            $recentQuery->where(function($q) use ($booth) {
+                $q->where('booth_id', $booth)->orWhereNull('booth_id');
+            });
+        }
+
+        $pendingJobs = $pendingQuery
             ->orderBy('id')
             ->get()
             ->map(function ($j) {
@@ -55,6 +94,7 @@ class PrintStationController extends Controller
                     'session_id' => $j->session_id,
                     'session_code' => $session?->session_code ?? "JOB-{$j->id}",
                     'event_name' => $session?->event?->name ?? 'Photobooth Event',
+                    'booth_id' => $j->booth_id ?: ($session?->booth_id ?: 'STAND-01'),
                     'copies' => $j->copies ?: 1,
                     'paper_size' => $j->paper_size ?: '4R',
                     'printer_name' => $j->printer?->name ?? 'Default Local Printer',
@@ -64,8 +104,7 @@ class PrintStationController extends Controller
                 ];
             });
 
-        $recentJobs = PrintJob::with(['session.template', 'printer'])
-            ->whereIn('status', ['completed', 'printing', 'failed'])
+        $recentJobs = $recentQuery
             ->orderByDesc('id')
             ->take(15)
             ->get()
@@ -80,6 +119,7 @@ class PrintStationController extends Controller
                     'id' => $j->id,
                     'session_id' => $j->session_id,
                     'session_code' => $session?->session_code ?? "JOB-{$j->id}",
+                    'booth_id' => $j->booth_id ?: ($session?->booth_id ?: 'STAND-01'),
                     'copies' => $j->copies ?: 1,
                     'paper_size' => $j->paper_size ?: '4R',
                     'printer_name' => $j->printer?->name ?? 'Default Local Printer',
@@ -97,6 +137,7 @@ class PrintStationController extends Controller
 
         return response()->json([
             'success' => true,
+            'selected_booth' => $booth ?: 'all',
             'pending_jobs' => $pendingJobs,
             'recent_jobs' => $recentJobs,
             'active_printer' => $activePrinter,
@@ -153,12 +194,15 @@ class PrintStationController extends Controller
             imagedestroy($im);
         }
 
+        $boothId = $request->input('booth_id', 'STAND-01');
+
         // Cari sesi dummy atau sesi terakhir untuk relasi
         $session = BoothSession::latest()->first();
 
         $job = PrintJob::create([
             'session_id' => $session?->id,
             'printer_id' => $printer?->id,
+            'booth_id' => $boothId,
             'copies' => $copies,
             'paper_size' => $paperSize,
             'status' => 'pending',

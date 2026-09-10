@@ -24,8 +24,9 @@ class SessionApiController extends Controller
     {
         $templateId = $request->input('template_id');
         $eventId = $request->input('event_id');
+        $boothId = $request->input('booth_id') ?: $request->input('booth') ?: 'STAND-01';
 
-        $session = $this->sessionManager->startNewSession($templateId, $eventId);
+        $session = $this->sessionManager->startNewSession($templateId, $eventId, $boothId);
 
         return response()->json([
             'success' => true,

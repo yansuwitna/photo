@@ -30,7 +30,7 @@ class SessionManager
         $this->composer = new PhotoComposer();
     }
 
-    public function startNewSession(?int $templateId = null, ?int $eventId = null): BoothSession
+    public function startNewSession(?int $templateId = null, ?int $eventId = null, ?string $boothId = 'STAND-01'): BoothSession
     {
         $event = $eventId ? Event::find($eventId) : Event::where('is_active', true)->first();
         $template = $templateId ? Template::find($templateId) : (Template::where('is_default', true)->first() ?: Template::first());
@@ -42,6 +42,7 @@ class SessionManager
             'session_code' => $sessionCode,
             'event_id' => $event?->id,
             'template_id' => $template?->id,
+            'booth_id' => $boothId ?: 'STAND-01',
             'status' => 'init',
             'current_step' => 'template',
             'total_photos_required' => $template ? $template->photo_count : 3,
@@ -215,7 +216,7 @@ class SessionManager
         $paperSize = $requestedPaperSize 
             ?: $printerManager->getActivePaperSize($session->template?->paper_size);
 
-        $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize);
+        $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize, $session->booth_id);
 
         if ($printRes['success']) {
             $status = ($printRes['status'] ?? '') === 'pending' ? 'printing' : 'printed';

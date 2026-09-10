@@ -23,6 +23,7 @@ import {
 } from 'lucide-vue-next';
 import axios from 'axios';
 import { useAudioStore } from '@/stores/audioStore';
+import ThemeToggle from '@/Components/ThemeToggle.vue';
 import { showSuccess, showError, showInfo } from '@/utils/swal';
 
 interface PrintJobItem {
@@ -30,6 +31,7 @@ interface PrintJobItem {
     session_id?: string;
     session_code?: string;
     event_name?: string;
+    booth_id?: string;
     copies: number;
     paper_size: string;
     printer_name?: string;
@@ -44,6 +46,8 @@ const props = defineProps<{
     active_printer?: any;
     active_paper_size?: string;
     web_station_enabled: boolean;
+    selected_booth?: string;
+    available_booths?: string[];
     stats?: {
         today_jobs: number;
         today_completed: number;
@@ -68,6 +72,32 @@ const isTestingPrint = ref(false);
 const previewPhotoUrl = ref<string | null>(null);
 const copiedShortcut = ref(false);
 
+// Booth identity state
+const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+const initialBooth = urlParams?.get('booth') || (urlParams?.get('stand') ? `STAND-0${urlParams.get('stand')}` : null) || props.selected_booth || (typeof window !== 'undefined' ? localStorage.getItem('print_station_booth_id') : null) || 'STAND-01';
+const selectedBooth = ref(initialBooth);
+
+const availableBoothsList = computed(() => {
+    const list = ['STAND-01', 'STAND-02', 'STAND-03', 'STAND-04'];
+    if (props.available_booths) {
+        props.available_booths.forEach(b => {
+            if (b && !list.includes(b)) list.push(b);
+        });
+    }
+    return list;
+});
+
+function changeBooth(booth: string) {
+    selectedBooth.value = booth;
+    if (typeof window !== 'undefined') {
+        localStorage.setItem('print_station_booth_id', booth);
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('booth', booth);
+        window.history.replaceState({}, '', newUrl.toString());
+    }
+    fetchJobs();
+}
+
 const completedCount = ref(props.stats?.today_completed || 0);
 const queueCount = computed(() => pendingJobs.value.length);
 
@@ -87,7 +117,9 @@ onUnmounted(() => {
 async function fetchJobs() {
     try {
         isPolling.value = true;
-        const res = await axios.get('/api/print-station/jobs');
+        const res = await axios.get('/api/print-station/jobs', {
+            params: { booth: selectedBooth.value }
+        });
         if (res.data.success) {
             pendingJobs.value = res.data.pending_jobs || [];
             recentJobs.value = res.data.recent_jobs || [];
@@ -394,6 +426,7 @@ async function handleTestPrint() {
         const res = await axios.post('/api/print-station/test', {
             copies: 1,
             paper_size: activePaperSize.value,
+            booth_id: selectedBooth.value !== 'all' ? selectedBooth.value : 'STAND-01',
         });
         if (res.data.success) {
             showSuccess('Uji Cetak Dimasukkan', 'Kartu uji cetak berhasil dimasukkan ke antrean!');
@@ -433,8 +466,11 @@ async function handleToggleStation() {
 
 // Copy shortcut command untuk Windows Run
 function copyRunCommand() {
-    const currentUrl = window.location.href;
-    const cmd = `chrome.exe --kiosk-printing "${currentUrl}"`;
+    const url = new URL(window.location.origin + '/print-station');
+    if (selectedBooth.value) {
+        url.searchParams.set('booth', selectedBooth.value);
+    }
+    const cmd = `chrome.exe --kiosk-printing "${url.toString()}"`;
     navigator.clipboard.writeText(cmd);
     copiedShortcut.value = true;
     setTimeout(() => {
@@ -448,7 +484,7 @@ function copyRunCommand() {
 
     <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none">
         <!-- TOP NAVIGATION BAR -->
-        <header class="bg-slate-900/90 border-b border-white/10 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40 backdrop-blur-md">
+        <header class="bg-slate-900/90 border-b border-white/10 px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3 sm:gap-4 sticky top-0 z-40 backdrop-blur-md">
             <div class="flex items-center gap-3">
                 <button 
                     @click="router.visit('/controller')" 
@@ -457,56 +493,83 @@ function copyRunCommand() {
                 >
                     <ArrowLeft class="w-5 h-5" />
                 </button>
-                <div class="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)]">
-                    <Printer class="w-6 h-6" />
+                <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.25)] shrink-0">
+                    <Printer class="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-xl font-black tracking-tight text-white">WEB PRINT STATION</h1>
+                        <h1 class="text-lg sm:text-xl font-black tracking-tight text-white">WEB PRINT STATION</h1>
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider"
                             :class="autoPrintEnabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400 border border-white/10'"
                         >
                             <span class="w-2 h-2 rounded-full" :class="autoPrintEnabled ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'"></span>
-                            {{ autoPrintEnabled ? 'Real-Time Aktif' : 'Standby / Jeda' }}
+                            <span class="hidden sm:inline">{{ autoPrintEnabled ? 'Real-Time Aktif' : 'Standby / Jeda' }}</span>
+                            <span class="sm:hidden">{{ autoPrintEnabled ? 'ON' : 'OFF' }}</span>
                         </span>
                     </div>
-                    <p class="text-xs text-slate-400">
-                        Pencetakan otomatis browser terhubung langsung dengan Kiosk & Tablet
+                    <p class="text-xs text-slate-400 hidden sm:block">
+                        Pencetakan otomatis background untuk Stand & Printer lokal
                     </p>
                 </div>
             </div>
 
+            <!-- STAND / BOOTH SELECTOR (DEDICATED PRINT PER STAND) -->
+            <div class="flex items-center gap-2 bg-slate-950/90 border-2 border-amber-500/40 px-3 py-1.5 rounded-2xl shadow-lg">
+                <span class="text-[11px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    Stand:
+                </span>
+                <select 
+                    :value="selectedBooth"
+                    @change="changeBooth(($event.target as HTMLSelectElement).value)"
+                    class="bg-slate-900 text-amber-300 font-black text-xs px-2.5 py-1 rounded-xl border border-white/10 focus:outline-none focus:border-amber-400 cursor-pointer"
+                >
+                    <option 
+                        v-for="b in availableBoothsList" 
+                        :key="b" 
+                        :value="b"
+                        class="bg-slate-900 text-white font-bold"
+                    >
+                        {{ b }} (Stand Ini)
+                    </option>
+                    <option value="all" class="bg-slate-900 text-amber-400 font-bold">Semua Stand (Global)</option>
+                </select>
+            </div>
+
             <!-- RIGHT CONTROLS -->
-            <div class="flex items-center gap-2.5">
+            <div class="flex items-center gap-2 sm:gap-2.5">
+                <!-- Theme Toggle -->
+                <ThemeToggle />
+
                 <!-- Sound Toggle -->
                 <button
                     @click="soundEnabled = !soundEnabled"
-                    class="px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all"
+                    class="px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 sm:gap-2 border transition-all"
                     :class="soundEnabled ? 'bg-white/10 text-slate-200 border-white/20 hover:bg-white/15' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'"
                     title="Toggle Efek Suara"
                 >
                     <Volume2 v-if="soundEnabled" class="w-4 h-4 text-emerald-400" />
                     <VolumeX v-else class="w-4 h-4" />
-                    <span>{{ soundEnabled ? 'Audio Aktif' : 'Mute' }}</span>
+                    <span class="hidden md:inline">{{ soundEnabled ? 'Audio Aktif' : 'Mute' }}</span>
                 </button>
 
                 <!-- Help Silent Print Guide -->
                 <button
                     @click="showGuideModal = true"
-                    class="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-2 transition-all shadow-sm"
+                    class="px-2.5 sm:px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 sm:gap-2 transition-all shadow-sm"
                 >
                     <HelpCircle class="w-4 h-4" />
-                    <span>Panduan Silent Print</span>
+                    <span class="hidden md:inline">Panduan Silent Print</span>
                 </button>
 
                 <!-- Test Print Button -->
                 <button
                     @click="handleTestPrint"
                     :disabled="isTestingPrint || isPrinting"
-                    class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
+                    class="px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs flex items-center gap-1.5 sm:gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50"
                 >
                     <Sparkles class="w-4 h-4" />
-                    <span>{{ isTestingPrint ? 'Menyiapkan...' : 'Uji Cetak (Test)' }}</span>
+                    <span>{{ isTestingPrint ? 'Menyiapkan...' : 'Uji Cetak' }}</span>
                 </button>
 
                 <!-- Link to Admin -->
@@ -568,6 +631,16 @@ function copyRunCommand() {
                                 Margin: 0mm (Borderless)
                             </span>
                         </div>
+                    </div>
+
+                    <!-- STAND TARGET BANNER -->
+                    <div class="mt-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                            <span class="text-slate-300">Menangani Antrean:</span>
+                            <span class="font-black text-amber-400">{{ selectedBooth === 'all' ? 'SEMUA STAND (GLOBAL)' : selectedBooth }}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-lg font-mono">Silent Print</span>
                     </div>
 
                     <!-- STAT COUNTERS -->
@@ -665,7 +738,10 @@ function copyRunCommand() {
                                     <img v-if="job.file_url" :src="job.file_url" class="w-full h-full object-cover" />
                                 </div>
                                 <div class="truncate">
-                                    <span class="font-bold text-white text-xs block truncate">{{ job.session_code || 'JOB #' + job.id }}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-bold text-white text-xs block truncate">{{ job.session_code || 'JOB #' + job.id }}</span>
+                                        <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[10px] font-bold border border-amber-500/30">{{ job.booth_id || 'STAND-01' }}</span>
+                                    </div>
                                     <span class="text-[11px] text-slate-400">{{ job.copies }}x Salinan • {{ job.paper_size }}</span>
                                 </div>
                             </div>
@@ -722,6 +798,7 @@ function copyRunCommand() {
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-2">
                                         <span class="font-bold text-white text-xs truncate">{{ job.session_code || 'JOB #' + job.id }}</span>
+                                        <span class="px-1.5 py-0.5 rounded bg-white/10 text-amber-300 font-mono text-[9px] font-bold border border-white/10">{{ job.booth_id || 'STAND-01' }}</span>
                                         <span class="text-[10px] text-slate-500 font-mono">{{ job.completed_at || job.created_at }}</span>
                                     </div>
                                     <div class="text-[11px] text-slate-400 mt-0.5">

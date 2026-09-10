@@ -90,14 +90,20 @@ class PrinterManager
         return $status;
     }
 
-    public function printFile(?string $sessionId, string $filePath, int $copies = 1, ?string $paperSize = null): array
+    public function printFile(?string $sessionId, string $filePath, int $copies = 1, ?string $paperSize = null, ?string $boothId = null): array
     {
         $resolvedPaperSize = $paperSize ?: $this->getActivePaperSize();
         // Validasi apakah session_id ada di database
         $validSessionId = null;
-        if (!empty($sessionId) && \App\Models\BoothSession::where('id', $sessionId)->exists()) {
-            $validSessionId = $sessionId;
+        $resolvedBoothId = $boothId;
+        if (!empty($sessionId)) {
+            $session = \App\Models\BoothSession::find($sessionId);
+            if ($session) {
+                $validSessionId = $session->id;
+                $resolvedBoothId = $resolvedBoothId ?: $session->booth_id;
+            }
         }
+        $resolvedBoothId = $resolvedBoothId ?: 'STAND-01';
 
         // Buat record PrintJob (nullable session_id didukung untuk test print)
         $job = null;
@@ -105,6 +111,7 @@ class PrinterManager
             $job = PrintJob::create([
                 'session_id' => $validSessionId,
                 'printer_id' => $this->printerModel?->id,
+                'booth_id' => $resolvedBoothId,
                 'copies' => $copies,
                 'paper_size' => $resolvedPaperSize,
                 'status' => 'printing',

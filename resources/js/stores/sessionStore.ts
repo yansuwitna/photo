@@ -16,13 +16,26 @@ export const useSessionStore = defineStore('session', {
         printProgress: 0,
         isPrinting: false,
         isComposing: false,
+        boothId: (typeof window !== 'undefined' ? localStorage.getItem('photobooth_booth_id') : null) || 'STAND-01',
         autoResetTimer: null as any,
         autoResetSeconds: 20,
     }),
     actions: {
-        async startSession(templateId?: number, eventId?: number) {
+        setBoothId(id: string) {
+            this.boothId = id;
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('photobooth_booth_id', id);
+            }
+        },
+
+        async startSession(templateId?: number, eventId?: number, boothId?: string) {
             try {
-                const res = await axios.post('/api/session/start', { template_id: templateId, event_id: eventId });
+                const targetBooth = boothId || this.boothId || 'STAND-01';
+                const res = await axios.post('/api/session/start', {
+                    template_id: templateId,
+                    event_id: eventId,
+                    booth_id: targetBooth,
+                });
                 if (res.data.success) {
                     this.session = res.data.session;
                     if (this.session?.template) {

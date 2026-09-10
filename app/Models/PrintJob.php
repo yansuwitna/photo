@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class PrintJob extends Model
 {
     protected $fillable = [
-        'session_id', 'printer_id', 'copies', 'paper_size',
+        'session_id', 'printer_id', 'booth_id', 'copies', 'paper_size',
         'status', 'progress', 'error_message', 'started_at', 'completed_at'
     ];
 
