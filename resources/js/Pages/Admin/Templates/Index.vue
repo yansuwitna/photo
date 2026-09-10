@@ -276,14 +276,23 @@ async function handleDeleteTemplate(template: Template) {
                     </p>
                 </div>
 
-                <!-- Global Add Builder Button -->
-                <Link
-                    href="/admin/templates/builder"
-                    class="py-2.5 px-5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-amber-400/20 transition-all active:scale-95 self-start md:self-auto"
-                >
-                    <Plus class="w-4 h-4 stroke-[3]" />
-                    <span>BUKA VISUAL BUILDER BARU</span>
-                </Link>
+                <!-- Quick Add Action Buttons for Strip & Full 4R -->
+                <div class="flex items-center gap-2 self-start md:self-auto">
+                    <Link
+                        href="/admin/templates/builder?paper_size=Strip+2x6&count=3&format=strip"
+                        class="py-2.5 px-4 rounded-2xl bg-pink-500 hover:bg-pink-400 text-white font-black text-xs flex items-center gap-1.5 shadow-lg shadow-pink-500/20 transition-all active:scale-95"
+                    >
+                        <Plus class="w-4 h-4 stroke-[3]" />
+                        <span>+ Desain Strip</span>
+                    </Link>
+                    <Link
+                        href="/admin/templates/builder?paper_size=4R&count=4&format=full"
+                        class="py-2.5 px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg shadow-amber-400/20 transition-all active:scale-95"
+                    >
+                        <Plus class="w-4 h-4 stroke-[3]" />
+                        <span>+ Desain Full 4R</span>
+                    </Link>
+                </div>
             </div>
 
             <!-- SUMMARY STATS BAR -->

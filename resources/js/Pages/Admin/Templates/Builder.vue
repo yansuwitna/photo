@@ -18,7 +18,8 @@ import {
     RotateCcw,
     Sliders,
     Check,
-    Square
+    Square,
+    Lock
 } from 'lucide-vue-next';
 import axios from 'axios';
 import FrameSelectorModal, { type FrameItem } from '@/Components/FrameSelectorModal.vue';
@@ -38,16 +39,32 @@ const props = defineProps<{
 // Read query params from URL if available
 const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
 const queryPaperSize = props.preset?.paper_size || searchParams?.get('paper_size');
+const queryFormat = props.preset?.format || searchParams?.get('format');
 const queryCount = props.preset?.photo_count || (searchParams?.get('count') ? Number(searchParams?.get('count')) : null);
 const queryName = props.preset?.name || searchParams?.get('name');
 
-const initialPaperSize = props.template?.paper_size || queryPaperSize || 'Strip 2x6';
-const initialCount = props.template?.photo_count || queryCount || 3;
-const initialName = props.template?.name || queryName || (initialPaperSize === 'Strip 2x6' ? `Desain Baru Strip ${initialCount} Foto` : `Desain Baru Full ${initialCount} Foto`);
+// Kunci format secara otomatis: Strip (Setengah 4R / 2x6) vs Full (4R Utuh / 4x6)
+// Template Strip TIDAK BISA diubah ke Full, dan sebaliknya!
+const isStrip = computed(() => {
+    if (props.template?.paper_size) {
+        const ps = props.template.paper_size.toLowerCase();
+        return ps.includes('strip') || ps.includes('2x6');
+    }
+    const qps = (queryPaperSize || '').toLowerCase();
+    const qf = (queryFormat || '').toLowerCase();
+    return qps.includes('strip') || qps.includes('2x6') || qf === 'strip';
+});
+
+// Ukuran kertas & kanvas terkunci otomatis (Strip 2x6 / 600x1800 px atau 4R / 1200x1800 px)
+const paperSize = computed<'Strip 2x6' | '4R'>(() => {
+    return isStrip.value ? 'Strip 2x6' : '4R';
+});
+const orientation = ref<'portrait' | 'landscape'>('portrait');
+
+const initialCount = props.template?.photo_count || queryCount || (isStrip.value ? 3 : 4);
+const initialName = props.template?.name || queryName || (isStrip.value ? `Desain Baru Strip ${initialCount} Foto` : `Desain Baru Full ${initialCount} Foto`);
 
 const templateName = ref(initialName);
-const paperSize = ref(initialPaperSize);
-const orientation = ref<'portrait' | 'landscape'>(props.template?.orientation || 'portrait');
 const backgroundColor = ref(props.template?.background_color || '#ffffff');
 const photoCount = ref(initialCount);
 const overlayImage = ref<string | null>(props.template?.overlay_image || null);
@@ -181,12 +198,12 @@ function generatePresetElements(size: string, count: number): any[] {
 
 // Elements List
 const elements = ref<any[]>(
-    props.template?.elements && props.template.elements.length > 0
+    props.template?.elements && Array.isArray(props.template.elements) && props.template.elements.length > 0
         ? JSON.parse(JSON.stringify(props.template.elements)).map((el: any) => ({
             ...el,
             rotation: el.rotation ?? 0,
         }))
-        : generatePresetElements(initialPaperSize, initialCount)
+        : generatePresetElements(paperSize.value, initialCount)
 );
 
 const selectedIndex = ref<number | null>(0);
@@ -257,12 +274,10 @@ function removeSelected() {
     }
 }
 
-// Preset switchers
-function applyCategoryPreset(targetSize: 'Strip 2x6' | '4R', targetCount: number) {
-    paperSize.value = targetSize;
-    orientation.value = 'portrait';
+// Preset Slot Switcher (hanya mengubah slot foto dalam format yang sedang terkunci)
+function applySlotPreset(targetCount: number) {
     photoCount.value = targetCount;
-    elements.value = generatePresetElements(targetSize, targetCount);
+    elements.value = generatePresetElements(paperSize.value, targetCount);
     selectedIndex.value = 0;
 }
 
@@ -326,8 +341,12 @@ async function saveTemplate() {
                             placeholder="Nama Template (misal: Acara Ultah)"
                         />
                         <div class="flex items-center gap-2 mt-0.5">
-                            <span class="text-[11px] text-amber-300 font-bold">
-                                {{ paperSize === 'Strip 2x6' ? 'Photo Strip (Setengah 4R / 2x6")' : 'Full Photo (Kertas 4R Utuh / 4x6")' }}
+                            <span
+                                class="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-md border"
+                                :class="isStrip ? 'bg-pink-500/10 border-pink-500/30 text-pink-300' : 'bg-amber-500/10 border-amber-500/30 text-amber-300'"
+                            >
+                                <Lock class="w-3 h-3" />
+                                <span>{{ isStrip ? 'Format Photo Strip (600x1800 px) • Terkunci' : 'Format Full Photo 4R (1200x1800 px) • Terkunci' }}</span>
                             </span>
                             <span class="text-slate-500">•</span>
                             <span class="text-[11px] text-slate-400 font-medium">
@@ -361,76 +380,85 @@ async function saveTemplate() {
             <div class="flex-1 grid grid-cols-12 gap-5 overflow-hidden min-h-0">
                 <!-- LEFT: TOOLBOX (Col 3) -->
                 <div class="col-span-3 rounded-3xl bg-slate-900 border border-white/10 p-4 overflow-y-auto space-y-4 text-xs">
-                    <!-- PRESET CEPAT SESUAI 7 KATEGORI TABEL -->
+                    <!-- PRESET CEPAT SESUAI FORMAT TERKUNCI -->
                     <div class="space-y-2">
-                        <span class="font-bold text-amber-400 uppercase tracking-wider block text-[11px]">
-                            ⚡ Preset Sesuai 7 Tabel:
-                        </span>
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-amber-400 uppercase tracking-wider block text-[11px]">
+                                ⚡ Preset Slot Foto:
+                            </span>
+                            <span
+                                class="text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1"
+                                :class="isStrip ? 'bg-pink-500/20 text-pink-300 border-pink-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'"
+                            >
+                                <Lock class="w-2.5 h-2.5" />
+                                <span>{{ isStrip ? 'Strip Terkunci' : 'Full 4R Terkunci' }}</span>
+                            </span>
+                        </div>
                         
-                        <!-- Strip Group -->
-                        <div class="p-2.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
-                            <span class="text-[10px] font-bold text-pink-300 block uppercase">Photo Strip (Setengah 4R):</span>
+                        <!-- Strip Group: Hanya tampil jika format Strip -->
+                        <div v-if="isStrip" class="p-2.5 rounded-2xl bg-white/5 border border-pink-500/20 space-y-1.5">
+                            <span class="text-[10px] font-bold text-pink-300 block uppercase">Pilih Jumlah Foto Strip:</span>
                             <div class="grid grid-cols-3 gap-1">
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('Strip 2x6', 2)"
+                                    @click="applySlotPreset(2)"
                                     class="py-1 px-1.5 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === 'Strip 2x6' && photoCount === 2 ? 'bg-pink-500 text-white border-pink-400' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
+                                    :class="photoCount === 2 ? 'bg-pink-500 text-white border-pink-400 shadow' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
                                 >
                                     2 Foto
                                 </button>
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('Strip 2x6', 3)"
+                                    @click="applySlotPreset(3)"
                                     class="py-1 px-1.5 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === 'Strip 2x6' && photoCount === 3 ? 'bg-pink-500 text-white border-pink-400' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
+                                    :class="photoCount === 3 ? 'bg-pink-500 text-white border-pink-400 shadow' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
                                 >
                                     3 Foto
                                 </button>
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('Strip 2x6', 4)"
+                                    @click="applySlotPreset(4)"
                                     class="py-1 px-1.5 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === 'Strip 2x6' && photoCount === 4 ? 'bg-pink-500 text-white border-pink-400' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
+                                    :class="photoCount === 4 ? 'bg-pink-500 text-white border-pink-400 shadow' : 'bg-pink-500/10 text-pink-300 border-pink-500/20 hover:bg-pink-500/20'"
                                 >
                                     4 Foto
                                 </button>
                             </div>
                         </div>
 
-                        <!-- Full 4R Group -->
-                        <div class="p-2.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
-                            <span class="text-[10px] font-bold text-amber-300 block uppercase">Full 4R Utuh:</span>
+                        <!-- Full 4R Group: Hanya tampil jika format Full -->
+                        <div v-else class="p-2.5 rounded-2xl bg-white/5 border border-amber-500/20 space-y-1.5">
+                            <span class="text-[10px] font-bold text-amber-300 block uppercase">Pilih Jumlah Foto Full 4R:</span>
                             <div class="grid grid-cols-4 gap-1">
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('4R', 1)"
+                                    @click="applySlotPreset(1)"
                                     class="py-1 px-1 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === '4R' && photoCount === 1 ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
+                                    :class="photoCount === 1 ? 'bg-amber-400 text-slate-950 border-amber-300 shadow font-black' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
                                 >
                                     1 Foto
                                 </button>
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('4R', 2)"
+                                    @click="applySlotPreset(2)"
                                     class="py-1 px-1 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === '4R' && photoCount === 2 ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
+                                    :class="photoCount === 2 ? 'bg-amber-400 text-slate-950 border-amber-300 shadow font-black' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
                                 >
                                     2 Foto
                                 </button>
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('4R', 4)"
+                                    @click="applySlotPreset(4)"
                                     class="py-1 px-1 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === '4R' && photoCount === 4 ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
+                                    :class="photoCount === 4 ? 'bg-amber-400 text-slate-950 border-amber-300 shadow font-black' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
                                 >
                                     4 Foto
                                 </button>
                                 <button
                                     type="button"
-                                    @click="applyCategoryPreset('4R', 6)"
+                                    @click="applySlotPreset(6)"
                                     class="py-1 px-1 rounded-lg border text-[10px] font-bold text-center transition-all"
-                                    :class="paperSize === '4R' && photoCount === 6 ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
+                                    :class="photoCount === 6 ? 'bg-amber-400 text-slate-950 border-amber-300 shadow font-black' : 'bg-amber-400/10 text-amber-300 border-amber-400/20 hover:bg-amber-400/20'"
                                 >
                                     6 Foto
                                 </button>
@@ -530,22 +558,16 @@ async function saveTemplate() {
                         </div>
                     </div>
 
-                    <!-- Layout & Paper Settings -->
+                    <!-- Background Canvas Color & Locked Format Info -->
                     <div class="pt-3 border-t border-white/10 space-y-2.5">
-                        <span class="font-bold text-slate-300 uppercase tracking-wider block text-[11px]">Ukuran Kertas & Kanvas</span>
-                        <div>
-                            <label class="text-slate-400 block mb-1 text-[11px]">Bentuk & Ukuran</label>
-                            <select v-model="paperSize" class="w-full px-2.5 py-1.5 rounded-xl bg-black/40 border border-white/10 text-white font-medium text-xs">
-                                <option value="Strip 2x6">Photo Strip (Setengah 4R / 2x6" - 600x1800 px)</option>
-                                <option value="4R">Full Photo (Kertas 4R Utuh / 4x6" - 1200x1800 px)</option>
-                                <option value="5R">5R (13x18 cm / 1500x2100 px)</option>
-                                <option value="6R">6R (15x20 cm / 1800x2400 px)</option>
-                                <option value="A4">A4 Print (2480x3508 px)</option>
-                            </select>
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-300 uppercase tracking-wider block text-[11px]">Warna Background</span>
+                            <span class="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                                <Lock class="w-3 h-3 text-amber-400" />
+                                <span>{{ isStrip ? 'Strip (600x1800)' : 'Full 4R (1200x1800)' }}</span>
+                            </span>
                         </div>
-
                         <div>
-                            <label class="text-slate-400 block mb-1 text-[11px]">Warna Background Kanvas</label>
                             <div class="flex items-center gap-2">
                                 <input type="color" v-model="backgroundColor" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border border-white/10" />
                                 <input v-model="backgroundColor" class="flex-1 px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs uppercase" />
@@ -561,12 +583,8 @@ async function saveTemplate() {
                         class="relative rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden transition-all duration-300 select-none border border-slate-300"
                         :style="{
                             backgroundColor: backgroundColor,
-                            width: orientation === 'portrait' 
-                                ? (paperSize === 'Strip 2x6' ? '210px' : '360px') 
-                                : (paperSize === 'Strip 2x6' ? '630px' : '500px'),
-                            height: orientation === 'portrait' 
-                                ? (paperSize === 'Strip 2x6' ? '630px' : '540px') 
-                                : (paperSize === 'Strip 2x6' ? '210px' : '360px'),
+                            width: isStrip ? '210px' : '360px',
+                            height: isStrip ? '630px' : '540px',
                         }"
                     >
                         <!-- Render Canvas Elements with Rotation -->

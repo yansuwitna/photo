@@ -10,8 +10,9 @@ Dokumen ini mencatat seluruh pembaruan arsitektur, integrasi modul, perubahan lo
 3. [Alur Penggunaan Kiosk (5 Langkah)](#3-alur-penggunaan-kiosk-5-langkah)
 4. [Pembaruan Manajemen Template Admin (7 Kategori)](#4-pembaruan-manajemen-template-admin-7-kategori)
 5. [Fitur Rotasi Slot Foto (Builder, Preview & Render 300 DPI)](#5-fitur-rotasi-slot-foto-builder-preview--render-300-dpi)
-6. [Matriks Detail Perubahan File](#6-matriks-detail-perubahan-file)
-7. [Panduan Pemeliharaan & Troubleshooting](#7-panduan-pemeliharaan--troubleshooting)
+6. [Penguncian Otomatis Ukuran Kertas & Kanvas](#6-penguncian-otomatis-ukuran-kertas--kanvas)
+7. [Matriks Detail Perubahan File](#7-matriks-detail-perubahan-file)
+8. [Panduan Pemeliharaan & Troubleshooting](#8-panduan-pemeliharaan--troubleshooting)
 
 ---
 
@@ -21,6 +22,7 @@ Dokumen ini mencatat seluruh pembaruan arsitektur, integrasi modul, perubahan lo
 2. **Penyederhanaan Alur Kiosk**: Menyesuaikan alur kiosk menjadi 5 tahapan terstruktur tanpa distraksi (Bentuk $\rightarrow$ Jumlah Foto $\rightarrow$ Template Aktif $\rightarrow$ Jepret Live Slot $\rightarrow$ Cetak Resolusi Tinggi 300 DPI). Filter wajah & pengubah background dinonaktifkan demi kecepatan operasional kiosk.
 3. **Pemisahan Tabel Template Admin**: Memecah halaman manajemen template menjadi 7 tabel kategori terpisah berdasarkan Bentuk (Strip/Full) dan Jumlah Foto (2, 3, 4, 1, 2, 4, 6) dengan aksi cepat "+ Tambah Desain" berbasis preset dan tombol "Ubah".
 4. **Dukungan Rotasi Slot Foto**: Memungkinkan desainer memutar slot foto secara bebas (derajat arbitrer atau tombol cepat 0°, 90°, 180°, 270°, ±15°) di Builder, tampil presisi secara real-time pada kanvas kiosk, dan dicetak sempurna pada resolusi 300 DPI via PHP GD (`imagerotate`).
+5. **Penguncian Otomatis Ukuran Kertas & Kanvas**: Opsi pemilihan ukuran kertas dan kanvas dihilangkan dari antarmuka Builder. Format Strip terkunci permanen pada rasio 1:3 (600x1800 px) dengan preset 2, 3, 4 foto, dan Full 4R terkunci permanen pada rasio 2:3 (1200x1800 px) dengan preset 1, 2, 4, 6 foto. Keduanya diisolasi penuh sehingga tidak dapat saling tertukar.
 
 ---
 
@@ -45,20 +47,6 @@ import {
   showDeleteConfirm,// Dialog konfirmasi hapus khusus (Merah)
   showToast         // Notifikasi toast ringan di sudut layar (top-end)
 } from '@/utils/swal';
-```
-
-### 2.3. Contoh Penggunaan
-```typescript
-// Konfirmasi hapus data
-const confirmed = await showDeleteConfirm(
-  'Hapus Template?',
-  `Template "${template.name}" akan dihapus permanen.`
-);
-if (confirmed) {
-  // Lakukan request penghapusan
-  await router.delete(`/admin/templates/${template.id}`);
-  showToast('Template berhasil dihapus', 'success');
-}
 ```
 
 ---
@@ -119,7 +107,7 @@ Halaman indeks admin (`/admin/templates`) telah dirombak dari satu tabel bercamp
 
 ## 5. Fitur Rotasi Slot Foto (Builder, Preview & Render 300 DPI)
 
-Setiap elemen bertipe `photo` pada kanvas kini mendukung parameter `rotation` (dalam derajat sudut, misal `0`, `90`, `-15`, `45`, `180`):
+Setiap elemen bertipe `photo_slot` pada kanvas kini mendukung parameter `rotation` (dalam derajat sudut, misal `0`, `90`, `-15`, `45`, `180`):
 
 ### 5.1. Template Builder (`Builder.vue`)
 - Panel konfigurasi elemen foto menyediakan kontrol rotasi interaktif:
@@ -138,22 +126,45 @@ Setiap elemen bertipe `photo` pada kanvas kini mendukung parameter `rotation` (d
 
 ### 5.3. Backend Composer 300 DPI (`PhotoComposer.php`)
 - PHP GD menggunakan fungsi `imagerotate($slotCanvas, -$rotation, $transparent)`.
-- *Catatan Teknis*: GD `imagerotate` memutar secara *counter-clockwise* untuk nilai positif, sedangkan transformasi CSS memutar secara *clockwise*. Penggunaan nilai minus (`-$rotation`) menjamin orientasi hasil cetak identik 100% dengan tampilan di layar kiosk.
+- Penggunaan nilai minus (`-$rotation`) menjamin orientasi hasil cetak identik 100% dengan tampilan di layar kiosk.
 - Bounding box setelah rotasi dihitung ulang agar titik pusat foto tetap berada di tengah koordinat slot yang telah dirancang admin.
 
 ---
 
-## 6. Matriks Detail Perubahan File
+## 6. Penguncian Otomatis Ukuran Kertas & Kanvas
+
+Berdasarkan kebutuhan operasional photobooth, ukuran kertas dan kanvas tidak lagi diizinkan untuk diubah-ubah secara manual di dalam Builder demi mencegah kerusakan komposisi layout dan ketidaksesuaian resolusi cetak printer.
+
+### 6.1. Aturan Penguncian (Locking Rules)
+1. **Format Strip (Setengah 4R)**:
+   - Terkunci permanen pada resolusi cetak **600 × 1800 px (300 DPI)**.
+   - Kanvas visual di Builder terkunci pada dimensi **210px × 630px** (aspek rasio 1:3).
+   - Opsi slot preset yang disediakan hanya **2 Foto**, **3 Foto**, dan **4 Foto**.
+   - Pengguna **TIDAK BISA** mengubah ukuran menjadi Full atau ukuran kertas lain.
+2. **Format Full 4R (4R Utuh)**:
+   - Terkunci permanen pada resolusi cetak **1200 × 1800 px (300 DPI)**.
+   - Kanvas visual di Builder terkunci pada dimensi **360px × 540px** (aspek rasio 2:3).
+   - Opsi slot preset yang disediakan hanya **1 Foto**, **2 Foto**, **4 Foto**, dan **6 Foto**.
+   - Pengguna **TIDAK BISA** mengubah ukuran menjadi Strip atau ukuran kertas lain.
+
+### 6.2. Elemen UI yang Dihilangkan & Digantikan
+- **Dropdown "Ukuran Kertas & Kanvas" Dihilangkan**: Input select yang sebelumnya berisi opsi `Strip 2x6`, `4R`, `5R`, `6R`, `A4` telah sepenuhnya dihapus dari toolbox sebelah kiri.
+- **Badge Status Terkunci**: Ditambahkan badge dengan ikon gembok (`Lock`) pada bar kontrol atas dan sidebar toolbox yang menerangkan format kanvas yang sedang aktif dan terkunci.
+- **Tombol Tambah Spesifik pada Index**: Tombol ambigu "BUKA VISUAL BUILDER BARU" pada halaman Index Admin digantikan oleh dua tombol spesifik: **`+ Desain Strip`** dan **`+ Desain Full 4R`**, sehingga setiap pembuatan desain baru selalu diawali dengan format yang jelas dan terkunci sejak awal.
+
+---
+
+## 7. Matriks Detail Perubahan File
 
 Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan beserta rincian fungsionalnya:
 
-### 6.1. File Frontend (Vue 3, Pinia, TypeScript)
+### 7.1. File Frontend (Vue 3, Pinia, TypeScript)
 
 | File | Status | Keterangan Perubahan |
 |---|---|---|
+| [`resources/js/Pages/Admin/Templates/Builder.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Builder.vue) | **Diperbarui** | Menghilangkan dropdown pilihan ukuran kertas dan kanvas, mengunci kanvas dan paperSize secara otomatis ke format Strip (600x1800) atau Full 4R (1200x1800), mengisolasi tombol preset hanya untuk format yang aktif, menambahkan indikator ikon gembok `Lock`, memperbaiki inisialisasi default slot foto (`paperSize.value`), dan kontrol rotasi foto. |
+| [`resources/js/Pages/Admin/Templates/Index.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Index.vue) | **Diperbarui** | Merestrukturisasi halaman menjadi 7 tabel kategori template, tombol "+ Tambah Desain", tombol "Ubah", tombol cepat header `+ Desain Strip` dan `+ Desain Full 4R`, serta migrasi dialog konfirmasi ke SweetAlert2. |
 | [`resources/js/utils/swal.ts`](file:///D:/PROGRAMER/WEB/photo/resources/js/utils/swal.ts) | **Baru** | Modul helper SweetAlert2 dengan custom styling Photobooth Dark Theme (`showSuccess`, `showError`, `showConfirm`, dll). |
-| [`resources/js/Pages/Admin/Templates/Index.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Index.vue) | **Diperbarui** | Merestrukturisasi halaman menjadi 7 tabel kategori template, tombol "+ Tambah Desain", tombol "Ubah", serta migrasi dialog konfirmasi hapus/toggle ke SweetAlert2. Menghapus teks "Tabel X:". |
-| [`resources/js/Pages/Admin/Templates/Builder.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Builder.vue) | **Diperbarui** | Menambahkan kontrol rotasi slot foto (slider, quick buttons, number input), preset generator untuk 7 kategori template, dan notifikasi SweetAlert2 saat simpan/gagal. |
 | [`resources/js/Pages/Kiosk/Camera.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Kiosk/Camera.vue) | **Diperbarui** | Menghubungkan alur jepretan live langsung ke slot template aktif (`LiveTemplateCanvas.vue`), mengganti `confirm()` restart dan `alert()` error cetak dengan SweetAlert2, menonaktifkan filter wajah dan background picker manual. |
 | [`resources/js/Components/LiveTemplateCanvas.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Components/LiveTemplateCanvas.vue) | **Diperbarui** | Merender slot foto dengan orientasi rotasi dinamis (`rotate(Xdeg)`), mendukung streaming video kamera pada slot aktif dengan rasio aspek cover. |
 | [`resources/js/Components/FrameSelectorModal.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Components/FrameSelectorModal.vue) | **Diperbarui** | Menggantikan konfirmasi hapus frame dan notifikasi simpan dengan SweetAlert2. |
@@ -167,7 +178,7 @@ Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan bese
 | [`resources/js/Pages/Download/Index.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Download/Index.vue) | **Diperbarui** | Mengganti toast informasi unduhan dengan `showToast()` dari SweetAlert2. |
 | [`resources/js/stores/sessionStore.ts`](file:///D:/PROGRAMER/WEB/photo/resources/js/stores/sessionStore.ts) | **Diperbarui** | Mengintegrasikan penanganan error sesi via `showError()` SweetAlert2. |
 
-### 6.2. File Backend (Laravel, PHP, Routes)
+### 7.2. File Backend (Laravel, PHP, Routes)
 
 | File | Status | Keterangan Perubahan |
 |---|---|---|
@@ -178,9 +189,9 @@ Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan bese
 
 ---
 
-## 7. Panduan Pemeliharaan & Troubleshooting
+## 8. Panduan Pemeliharaan & Troubleshooting
 
-### 7.1. Menjalankan Kompilasi Aset
+### 8.1. Menjalankan Kompilasi Aset
 Setelah melakukan perubahan pada berkas Vue, CSS, atau TypeScript, jalankan kompilasi:
 ```powershell
 # Mode Development (Hot Module Replacement)
@@ -190,7 +201,7 @@ npm run dev
 npm run build
 ```
 
-### 7.2. Membersihkan Cache Laravel
+### 8.2. Membersihkan Cache Laravel
 Jika ada penambahan rute atau konfigurasi baru:
 ```powershell
 php artisan route:clear
@@ -198,10 +209,10 @@ php artisan config:clear
 php artisan view:clear
 ```
 
-### 7.3. Menambah Variasi Template Baru
+### 8.3. Menambah Variasi Template Baru
 1. Masuk ke panel admin: `http://localhost:8000/admin/templates`.
 2. Temukan tabel kategori yang sesuai (misal: "Strip 3 Foto").
-3. Klik tombol **"+ Tambah Desain"** pada baris header kategori tersebut.
-4. Canvas akan otomatis terkonfigurasi dengan ukuran dan jumlah slot yang tepat.
-5. Unggah background, sesuaikan koordinat dan rotasi foto, tambahkan stiker atau teks, lalu klik **"Simpan Desain"**.
-6. Pastikan switch status template berada pada posisi **Aktif** agar langsung tersedia di layar Kiosk pelanggan.
+3. Klik tombol **"+ Tambah Desain"** pada baris header kategori tersebut (atau tombol `+ Desain Strip` / `+ Desain Full 4R` di bagian atas).
+4. Canvas akan otomatis terkonfigurasi dan terkunci dengan ukuran yang sesuai (tidak dapat tertukar antara Strip dan Full).
+5. Unggah background atau bingkai frame overlay PNG transparan, atur posisi & rotasi foto, tambahkan stiker atau teks, lalu klik **"SIMPAN DESAIN"**.
+6. Pastikan switch status template berada pada posisi **Aktif** agar langsung muncul di layar Kiosk pengguna.
