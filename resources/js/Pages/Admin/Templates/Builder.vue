@@ -14,9 +14,14 @@ import {
     Smile, 
     ArrowLeft, 
     Check,
-    Palette
+    Palette,
+    Sparkles,
+    Image as ImageIcon,
+    RefreshCw
 } from 'lucide-vue-next';
 import axios from 'axios';
+import FrameSelectorModal, { type FrameItem } from '@/Components/FrameSelectorModal.vue';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     template?: Template | null;
@@ -27,6 +32,17 @@ const paperSize = ref(props.template?.paper_size || '4R');
 const orientation = ref<'portrait' | 'landscape'>(props.template?.orientation || 'portrait');
 const backgroundColor = ref(props.template?.background_color || '#ffffff');
 const photoCount = ref(props.template?.photo_count || 3);
+const overlayImage = ref<string | null>(props.template?.overlay_image || null);
+const showFrameModal = ref(false);
+const frameOpacity = ref(100);
+
+function handleSelectFrame(frame: FrameItem) {
+    overlayImage.value = frame.path;
+}
+
+function handleRemoveFrame() {
+    overlayImage.value = null;
+}
 
 // Elements List
 const elements = ref<any[]>(
@@ -172,6 +188,7 @@ async function saveTemplate() {
             background_color: backgroundColor.value,
             photo_count: elements.value.filter(e => e.type === 'photo_slot').length,
             elements: elements.value,
+            overlay_image: overlayImage.value,
         };
 
         const res = await axios.post('/api/admin/templates/save', payload);
@@ -251,6 +268,69 @@ async function saveTemplate() {
                                 <QrCode class="w-4 h-4 text-emerald-400" />
                                 <span>+ QR Code Download</span>
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- BINGKAI FOTO (FRAME OVERLAY) SECTION -->
+                    <div class="pt-4 border-t border-white/10 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-amber-400 uppercase tracking-wider block">Bingkai Overlay (Layer Atas)</span>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold">300 DPI</span>
+                        </div>
+
+                        <!-- If frame selected -->
+                        <div v-if="overlayImage" class="p-3.5 rounded-2xl bg-black/40 border border-amber-400/30 space-y-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-16 rounded-xl bg-slate-950 border border-white/20 overflow-hidden flex items-center justify-center relative flex-shrink-0 shadow">
+                                    <img :src="getAssetUrl(overlayImage)" alt="Frame" class="w-full h-full object-contain" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <span class="text-xs font-bold text-white block truncate">Bingkai Aktif</span>
+                                    <span class="text-[10px] text-slate-400 block truncate">{{ overlayImage }}</span>
+                                    <button
+                                        @click="showFrameModal = true"
+                                        class="mt-1.5 text-xs text-amber-300 hover:text-amber-200 font-bold inline-flex items-center gap-1"
+                                    >
+                                        <RefreshCw class="w-3 h-3" /> Ganti Bingkai
+                                    </button>
+                                </div>
+                                <button
+                                    @click="handleRemoveFrame"
+                                    class="p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all"
+                                    title="Lepas Bingkai"
+                                >
+                                    <Trash2 class="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <!-- Opacity Slider -->
+                            <div class="pt-2.5 border-t border-white/10">
+                                <div class="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                                    <span>Transparansi Bingkai:</span>
+                                    <span class="font-mono text-white">{{ frameOpacity }}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="20"
+                                    max="100"
+                                    v-model.number="frameOpacity"
+                                    class="w-full accent-amber-400 cursor-pointer h-1.5 bg-white/10 rounded-lg"
+                                />
+                            </div>
+                        </div>
+
+                        <!-- If no frame selected -->
+                        <div v-else>
+                            <button
+                                @click="showFrameModal = true"
+                                class="w-full py-3.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500/20 to-purple-500/20 hover:from-amber-500/30 hover:to-purple-500/30 border border-amber-400/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+                            >
+                                <Sparkles class="w-4 h-4 text-amber-400" />
+                                <span>+ Pasang / Unggah Bingkai</span>
+                            </button>
+                            <p class="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                                Tambahkan bingkai PNG transparan buatan sendiri (Canva/Photoshop) untuk berada di atas semua foto.
+                            </p>
                         </div>
                     </div>
 
@@ -347,6 +427,19 @@ async function saveTemplate() {
                                 </div>
                             </template>
                         </div>
+
+                        <!-- LIVE OVERLAY FRAME ON TOP OF ALL SLOTS -->
+                        <div
+                            v-if="overlayImage"
+                            class="absolute inset-0 pointer-events-none z-20 overflow-hidden"
+                            :style="{ opacity: frameOpacity / 100 }"
+                        >
+                            <img
+                                :src="getAssetUrl(overlayImage)"
+                                alt="Frame Overlay"
+                                class="w-full h-full object-fill"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -430,5 +523,14 @@ async function saveTemplate() {
                 </div>
             </div>
         </div>
+
+        <!-- FRAME SELECTOR MODAL -->
+        <FrameSelectorModal
+            :show="showFrameModal"
+            :currentFramePath="overlayImage"
+            @close="showFrameModal = false"
+            @select="handleSelectFrame"
+            @remove="handleRemoveFrame"
+        />
     </AdminLayout>
 </template>

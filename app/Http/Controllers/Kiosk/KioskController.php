@@ -21,7 +21,7 @@ class KioskController extends Controller
 
     public function templateSelect(string $sessionId): Response
     {
-        $session = BoothSession::with(['event', 'template'])->findOrFail($sessionId);
+        $session = BoothSession::with(['event', 'template.elements'])->findOrFail($sessionId);
         $templates = Template::where('is_active', true)->with('elements')->get();
 
         return Inertia::render('Kiosk/TemplateSelect', [
@@ -32,8 +32,11 @@ class KioskController extends Controller
 
     public function camera(string $sessionId): Response
     {
-        $session = BoothSession::with(['event', 'template', 'photos', 'camera', 'printer'])->findOrFail($sessionId);
-        $template = $session->template ?: Template::first();
+        $session = BoothSession::with(['event', 'template.elements', 'photos', 'camera', 'printer'])->findOrFail($sessionId);
+        $template = $session->template ?: Template::with('elements')->first();
+        if ($template) {
+            $template->loadMissing('elements');
+        }
 
         return Inertia::render('Kiosk/Camera', [
             'session' => $session,

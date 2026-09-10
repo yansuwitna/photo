@@ -46,6 +46,38 @@ class SessionApiController extends Controller
         ]);
     }
 
+    public function setFrame(Request $request, string $sessionId): JsonResponse
+    {
+        $session = BoothSession::findOrFail($sessionId);
+        $framePath = $request->input('frame_path');
+        $bgColor = $request->input('background_color');
+
+        $metadata = $session->metadata ?? [];
+        if ($request->has('frame_path')) {
+            if ($framePath) {
+                $metadata['custom_overlay_image'] = $framePath;
+            } else {
+                unset($metadata['custom_overlay_image']);
+            }
+        }
+
+        if ($request->has('background_color')) {
+            if ($bgColor) {
+                $metadata['custom_background_color'] = $bgColor;
+            } else {
+                unset($metadata['custom_background_color']);
+            }
+        }
+
+        $session->update(['metadata' => $metadata]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Kustomisasi berhasil disimpan.',
+            'session' => $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']),
+        ]);
+    }
+
     public function capture(Request $request, string $sessionId): JsonResponse
     {
         $session = BoothSession::with(['event', 'template', 'photos'])->findOrFail($sessionId);

@@ -17,6 +17,7 @@ import {
     ExternalLink 
 } from 'lucide-vue-next';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     stats: {
@@ -37,11 +38,6 @@ async function refreshAll() {
     await deviceStore.fetchStatus();
     router.reload({ only: ['stats', 'recentSessions'] });
     isRefreshing.value = false;
-}
-
-function getAssetUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
 }
 </script>
 

@@ -24,6 +24,8 @@ class Template extends Model
         'settings' => 'array',
     ];
 
+    protected $with = ['elements'];
+
     public function elements()
     {
         return $this->hasMany(TemplateElement::class)->orderBy('z_index');

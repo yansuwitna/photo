@@ -151,7 +151,7 @@ class SessionManager
             'total_photos' => $session->total_photos_required,
             'captured_count' => $capturedCount,
             'is_complete' => $isComplete,
-            'session' => $session->fresh(),
+            'session' => $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']),
         ];
     }
 

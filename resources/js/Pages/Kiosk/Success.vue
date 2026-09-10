@@ -6,6 +6,7 @@ import type { BoothSession } from '@/types';
 import { CheckCircle2, Download, Printer, Home, Sparkles, QrCode } from 'lucide-vue-next';
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     session: BoothSession;
@@ -55,11 +56,6 @@ function handleDone() {
 
 function handleReprint() {
     router.visit(`/session/${props.session.id}/camera`);
-}
-
-function getAssetUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
 }
 </script>
 

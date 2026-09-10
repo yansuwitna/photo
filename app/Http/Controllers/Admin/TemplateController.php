@@ -42,6 +42,7 @@ class TemplateController extends Controller
         $bgColor = $request->input('background_color', '#ffffff');
         $photoCount = (int)$request->input('photo_count', 3);
         $elements = $request->input('elements', []);
+        $overlayImage = $request->input('overlay_image');
 
         if ($id) {
             $template = Template::findOrFail($id);
@@ -51,6 +52,7 @@ class TemplateController extends Controller
                 'orientation' => $orientation,
                 'background_color' => $bgColor,
                 'photo_count' => $photoCount,
+                'overlay_image' => $overlayImage,
             ]);
             $template->elements()->delete();
         } else {
@@ -61,6 +63,7 @@ class TemplateController extends Controller
                 'orientation' => $orientation,
                 'background_color' => $bgColor,
                 'photo_count' => $photoCount,
+                'overlay_image' => $overlayImage,
                 'is_active' => true,
             ]);
         }

@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Api\SessionApiController;
 use App\Http\Controllers\Api\DeviceApiController;
 use App\Http\Controllers\Api\PromoApiController;
+use App\Http\Controllers\Api\FrameApiController;
 
 /*
 |--------------------------------------------------------------------------
@@ -74,12 +75,18 @@ Route::prefix('api')->group(function () {
     // Session API
     Route::post('/session/start', [SessionApiController::class, 'start']);
     Route::post('/session/{sessionId}/select-template', [SessionApiController::class, 'selectTemplate']);
+    Route::post('/session/{sessionId}/set-frame', [SessionApiController::class, 'setFrame']);
     Route::post('/session/{sessionId}/capture', [SessionApiController::class, 'capture']);
     Route::post('/session/{sessionId}/retake', [SessionApiController::class, 'retake']);
     Route::post('/session/{sessionId}/compose', [SessionApiController::class, 'compose']);
     Route::post('/session/{sessionId}/print', [SessionApiController::class, 'print']);
     Route::post('/session/{sessionId}/payment', [SessionApiController::class, 'payment']);
     Route::get('/session/{sessionId}/status', [SessionApiController::class, 'status']);
+
+    // Frames & Custom Overlays API
+    Route::get('/frames', [FrameApiController::class, 'index']);
+    Route::post('/frames/upload', [FrameApiController::class, 'upload']);
+    Route::post('/frames/delete', [FrameApiController::class, 'delete']);
 
     // Hardware Devices API
     Route::get('/devices/overview', [DeviceApiController::class, 'overview']);

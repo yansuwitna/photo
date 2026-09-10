@@ -15,35 +15,45 @@ const displayText = computed(() => {
 </script>
 
 <template>
+    <!-- Countdown Overlay: NO BLUR, NO BLACKOUT - Kamera tetap 100% jernih dan tajam -->
     <div
         v-if="isCountingDown || countdown === 0"
-        class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm transition-all duration-300 pointer-events-none"
+        class="absolute inset-0 z-40 flex flex-col justify-between items-center p-6 pointer-events-none transition-all duration-200"
     >
-        <!-- Slot Indicator -->
-        <div class="mb-6 px-6 py-2 rounded-full bg-black/60 border border-white/20 text-white font-medium text-lg tracking-wider shadow-2xl backdrop-blur-md">
-            MENGAMBIL FOTO {{ slotIndex }} DARI {{ totalSlots }}
+        <!-- Top Slot Indicator Badge -->
+        <div class="flex items-center gap-2.5 px-5 py-2 rounded-full bg-black/70 border border-white/20 text-white font-bold text-xs md:text-sm tracking-wider shadow-2xl animate-fade-in">
+            <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+            <span>MENGAMBIL FOTO {{ slotIndex }} DARI {{ totalSlots }}</span>
         </div>
 
-        <!-- Giant Glow Circle & Number -->
-        <div class="relative flex items-center justify-center">
-            <!-- Pulsing outer ring -->
-            <div class="absolute w-72 h-72 rounded-full bg-gradient-to-tr from-amber-500/30 to-purple-500/30 animate-ping opacity-60"></div>
-            <div class="absolute w-60 h-60 rounded-full border-4 border-dashed border-white/40 animate-spin" style="animation-duration: 8s;"></div>
+        <!-- Central Countdown Number: Transparent background so user's face is 100% visible -->
+        <div class="relative flex flex-col items-center justify-center select-none my-auto">
+            <div class="relative flex items-center justify-center">
+                <!-- Outer subtle pulse ring (see-through interior) -->
+                <div
+                    v-if="countdown > 0"
+                    class="absolute w-44 h-44 rounded-full border-2 border-amber-400/40 animate-ping"
+                ></div>
+                <div
+                    v-if="countdown > 0"
+                    class="absolute w-36 h-36 rounded-full border-2 border-dashed border-white/30 animate-spin"
+                    style="animation-duration: 6s;"
+                ></div>
 
-            <!-- Central Badge -->
-            <div class="relative z-10 flex items-center justify-center w-52 h-52 rounded-full bg-gradient-to-br from-slate-900/90 to-black/90 border-2 border-white/30 shadow-[0_0_60px_rgba(255,255,255,0.25)]">
+                <!-- Number with crisp drop shadow, NO opaque background -->
                 <span
                     :key="countdown"
-                    class="font-extrabold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-rose-300 to-white transform transition-all duration-300 scale-100 animate-bounce"
-                    :class="countdown === 0 ? 'text-4xl text-center px-4 leading-tight' : 'text-8xl'"
+                    class="font-black tracking-tighter text-amber-300 drop-shadow-[0_4px_30px_rgba(0,0,0,0.95)] transform transition-transform duration-200"
+                    :class="countdown === 0 ? 'text-5xl md:text-6xl text-center text-white drop-shadow-[0_0_35px_rgba(245,158,11,1)] scale-110' : 'text-8xl md:text-9xl scale-100 animate-bounce'"
                 >
                     {{ displayText }}
                 </span>
             </div>
         </div>
 
-        <p class="mt-8 text-xl font-light text-slate-200 tracking-widest uppercase">
-            {{ countdown === 0 ? 'Tahan posisi terbaik Anda!' : 'Bersiap di depan kamera...' }}
-        </p>
+        <!-- Bottom Guidance Pill -->
+        <div class="px-5 py-2 rounded-full bg-black/60 border border-white/15 text-white text-xs md:text-sm font-semibold tracking-wide drop-shadow-md">
+            {{ countdown === 0 ? '📸 Senyum! Tahan posisi terbaik Anda...' : '👀 Tatap kamera & bersiap...' }}
+        </div>
     </div>
 </template>

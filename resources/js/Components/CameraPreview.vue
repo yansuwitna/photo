@@ -10,15 +10,21 @@ import {
     Battery, 
     HardDrive, 
     Camera as CameraIcon,
-    RefreshCw
+    RefreshCw,
+    Sparkles
 } from 'lucide-vue-next';
 import DeviceStatusBadge from './DeviceStatusBadge.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { getAssetUrl } from '@/utils/url';
 
 const deviceStore = useDeviceStore();
 
 const props = defineProps<{
     isLive?: boolean;
+    overlayFrame?: string | null;
+    aspectRatio?: number;
+    slotLabel?: string;
+    slotDimensions?: string;
 }>();
 
 const videoRef = ref<HTMLVideoElement | null>(null);
@@ -27,10 +33,30 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const showGrid = ref(true);
 const showFaceGuide = ref(true);
 const showSafeArea = ref(true);
+const showFrameGuide = ref(true);
 const mirrorMode = ref(true);
 const zoomLevel = ref(1.0);
 const brightness = ref(100);
 const isFullscreen = ref(false);
+
+export interface CameraFilter {
+    id: string;
+    name: string;
+    icon: string;
+    cssFilter: string;
+}
+
+const cameraFilters: CameraFilter[] = [
+    { id: 'normal', name: 'Asli', icon: '✨', cssFilter: 'none' },
+    { id: 'korean-glow', name: 'Korean Glow', icon: '🌸', cssFilter: 'brightness(1.08) contrast(0.98) saturate(1.12)' },
+    { id: 'bw-noir', name: 'B&W Klasik', icon: '🖤', cssFilter: 'grayscale(100%) contrast(1.25) brightness(1.02)' },
+    { id: 'vintage-film', name: 'Vintage 90s', icon: '🎞️', cssFilter: 'sepia(0.35) contrast(1.15) brightness(1.05) saturate(1.1)' },
+    { id: 'rosy-blush', name: 'Rosy Pink', icon: '🎀', cssFilter: 'contrast(1.06) saturate(1.25) hue-rotate(-10deg) brightness(1.04)' },
+    { id: 'cyber-cool', name: 'Cyber Cool', icon: '⚡', cssFilter: 'contrast(1.2) saturate(1.3) hue-rotate(15deg)' },
+];
+
+const activeFilterId = ref('normal');
+const activeFilter = computed(() => cameraFilters.find(f => f.id === activeFilterId.value) || cameraFilters[0]);
 
 const camera = computed(() => deviceStore.camera);
 
@@ -169,27 +195,93 @@ function triggerFlash() {
 function captureCurrentFrame(): string | null {
     triggerFlash();
 
+    const combinedFilter = [
+        activeFilter.value.cssFilter !== 'none' ? activeFilter.value.cssFilter : '',
+        brightness.value !== 100 ? `brightness(${brightness.value}%)` : ''
+    ].filter(Boolean).join(' ');
+
     // 1. Coba capture dari video stream (HP / Tablet / Webcam fisik)
     const video = videoRef.value;
     if (video && hasActiveStream.value && video.videoWidth > 0) {
         const offscreen = document.createElement('canvas');
-        offscreen.width = video.videoWidth;
-        offscreen.height = video.videoHeight;
+
+        // Sesuaikan crop persis dengan aspect ratio slot target seperti yang tampak di live view
+        const targetRatio = props.aspectRatio || (video.videoWidth / video.videoHeight);
+        const videoRatio = video.videoWidth / video.videoHeight;
+
+        let cropW = video.videoWidth;
+        let cropH = video.videoHeight;
+        let cropX = 0;
+        let cropY = 0;
+
+        if (videoRatio > targetRatio) {
+            cropH = video.videoHeight;
+            cropW = Math.round(video.videoHeight * targetRatio);
+            cropX = Math.round((video.videoWidth - cropW) / 2);
+            cropY = 0;
+        } else {
+            cropW = video.videoWidth;
+            cropH = Math.round(video.videoWidth / targetRatio);
+            cropX = 0;
+            cropY = Math.round((video.videoHeight - cropH) / 2);
+        }
+
+        offscreen.width = cropW;
+        offscreen.height = cropH;
         const ctx = offscreen.getContext('2d');
         if (!ctx) return null;
+
+        if (combinedFilter) {
+            ctx.filter = combinedFilter;
+        }
 
         if (mirrorMode.value) {
             ctx.translate(offscreen.width, 0);
             ctx.scale(-1, 1);
         }
 
-        ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
         return offscreen.toDataURL('image/jpeg', 0.95);
     }
 
     // 2. Fallback: capture dari canvas simulation
     const canvas = canvasRef.value;
     if (canvas) {
+        const offscreen = document.createElement('canvas');
+        const targetRatio = props.aspectRatio || (canvas.width / canvas.height);
+        const canvasRatio = canvas.width / canvas.height;
+
+        let cropW = canvas.width;
+        let cropH = canvas.height;
+        let cropX = 0;
+        let cropY = 0;
+
+        if (canvasRatio > targetRatio) {
+            cropH = canvas.height;
+            cropW = Math.round(canvas.height * targetRatio);
+            cropX = Math.round((canvas.width - cropW) / 2);
+            cropY = 0;
+        } else {
+            cropW = canvas.width;
+            cropH = Math.round(canvas.width / targetRatio);
+            cropX = 0;
+            cropY = Math.round((canvas.height - cropH) / 2);
+        }
+
+        offscreen.width = cropW;
+        offscreen.height = cropH;
+        const ctx = offscreen.getContext('2d');
+        if (ctx) {
+            if (combinedFilter) {
+                ctx.filter = combinedFilter;
+            }
+            if (mirrorMode.value) {
+                ctx.translate(offscreen.width, 0);
+                ctx.scale(-1, 1);
+            }
+            ctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            return offscreen.toDataURL('image/jpeg', 0.95);
+        }
         return canvas.toDataURL('image/jpeg', 0.95);
     }
 
@@ -249,7 +341,10 @@ defineExpose({
                 muted
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-200"
                 :class="{ '-scale-x-100': mirrorMode }"
-                :style="{ transform: `${mirrorMode ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`, filter: `brightness(${brightness}%)` }"
+                :style="{
+                    transform: `${mirrorMode ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`,
+                    filter: activeFilter.cssFilter !== 'none' ? `${activeFilter.cssFilter} brightness(${brightness}%)` : `brightness(${brightness}%)`
+                }"
             ></video>
 
             <!-- Fallback Canvas if Simulated -->
@@ -259,7 +354,10 @@ defineExpose({
                 height="720"
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-200"
                 :class="{ '-scale-x-100': mirrorMode }"
-                :style="{ transform: `${mirrorMode ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`, filter: `brightness(${brightness}%)` }"
+                :style="{
+                    transform: `${mirrorMode ? 'scaleX(-1)' : 'scaleX(1)'} scale(${zoomLevel})`,
+                    filter: activeFilter.cssFilter !== 'none' ? `${activeFilter.cssFilter} brightness(${brightness}%)` : `brightness(${brightness}%)`
+                }"
             ></canvas>
 
             <!-- RULE OF THIRDS GRID OVERLAY -->
@@ -290,8 +388,53 @@ defineExpose({
                 <span class="absolute top-2 left-2 text-[10px] tracking-widest text-white/50 uppercase">Safe Area (4R Print)</span>
             </div>
 
+            <!-- PRO VIEWFINDER CORNER BRACKETS -->
+            <div class="absolute inset-3 pointer-events-none z-10">
+                <div class="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-amber-400 rounded-tl-sm"></div>
+                <div class="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-amber-400 rounded-tr-sm"></div>
+                <div class="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-amber-400 rounded-bl-sm"></div>
+                <div class="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-amber-400 rounded-br-sm"></div>
+            </div>
+
+            <!-- SLOT FRAMING BADGE -->
+            <div v-if="slotLabel" class="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-2 px-3 py-1 rounded-full bg-black/70 border border-amber-400/40 text-amber-300 text-xs font-bold shadow-lg">
+                <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                <span>{{ slotLabel }}</span>
+                <span v-if="slotDimensions" class="text-white/60 font-mono text-[10px]">({{ slotDimensions }})</span>
+            </div>
+
+            <!-- LIVE OVERLAY FRAME GUIDE ON CAMERA PREVIEW -->
+            <div
+                v-if="overlayFrame && showFrameGuide"
+                class="absolute inset-0 pointer-events-none z-20 flex items-center justify-center overflow-hidden transition-opacity duration-300"
+            >
+                <img
+                    :src="getAssetUrl(overlayFrame)"
+                    alt="Frame Overlay Guide"
+                    class="w-full h-full object-contain drop-shadow-[0_0_20px_rgba(0,0,0,0.8)]"
+                />
+            </div>
+
             <!-- SLOT OVERLAY INJECTION (via slot) -->
             <slot />
+        </div>
+
+        <!-- BEAUTY FILTER FLOATING BAR (Like BeautyPlus) -->
+        <div class="absolute bottom-20 inset-x-0 z-30 flex items-center justify-center pointer-events-auto px-4">
+            <div class="flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/60 backdrop-blur-md border border-white/15 shadow-2xl overflow-x-auto max-w-full scrollbar-none">
+                <button
+                    v-for="filter in cameraFilters"
+                    :key="filter.id"
+                    @click="activeFilterId = filter.id"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap"
+                    :class="activeFilterId === filter.id 
+                        ? 'bg-gradient-to-r from-amber-400 to-amber-300 text-slate-950 shadow-md scale-105' 
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'"
+                >
+                    <span>{{ filter.icon }}</span>
+                    <span>{{ filter.name }}</span>
+                </button>
+            </div>
         </div>
 
         <!-- BOTTOM CONTROLS TOOLBAR -->
@@ -315,6 +458,17 @@ defineExpose({
                 >
                     <Smile class="w-4 h-4" />
                     <span class="hidden sm:inline">Panduan Wajah</span>
+                </button>
+
+                <button
+                    v-if="overlayFrame"
+                    @click="showFrameGuide = !showFrameGuide"
+                    class="p-2.5 rounded-xl border transition-all text-xs flex items-center gap-1.5"
+                    :class="showFrameGuide ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 shadow-md' : 'bg-white/10 border-white/10 text-slate-300 hover:bg-white/20'"
+                    title="Panduan Bingkai di Kamera"
+                >
+                    <Sparkles class="w-4 h-4" />
+                    <span class="hidden sm:inline">Bingkai Guide</span>
                 </button>
 
                 <button

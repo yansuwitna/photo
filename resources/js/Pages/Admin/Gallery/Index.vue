@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { Image, Download, Printer, QrCode, Search, Filter, X, ExternalLink } from 'lucide-vue-next';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     sessions: any[];
@@ -9,11 +10,6 @@ const props = defineProps<{
 
 const selectedSession = ref<any | null>(null);
 const searchQuery = ref('');
-
-function getAssetUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
-}
 </script>
 
 <template>

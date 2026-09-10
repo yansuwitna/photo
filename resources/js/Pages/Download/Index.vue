@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { Download, Share2, Sparkles, Camera, Check } from 'lucide-vue-next';
 import type { BoothSession } from '@/types';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     session: BoothSession;
 }>();
-
-function getAssetUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
-}
 
 async function handleShare() {
     if (navigator.share) {

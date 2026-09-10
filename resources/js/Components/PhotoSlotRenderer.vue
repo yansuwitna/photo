@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import type { SessionPhoto, Template } from '@/types';
 import { RotateCcw, CheckCircle, ZoomIn } from 'lucide-vue-next';
+import { getAssetUrl } from '@/utils/url';
 
 const props = defineProps<{
     photos: SessionPhoto[];
@@ -17,11 +18,6 @@ const emit = defineEmits<{
 
 function getPhotoForSlot(slotIndex: number) {
     return props.photos.find(p => p.slot_index === slotIndex && p.is_accepted);
-}
-
-function getPhotoUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
 }
 </script>
 
@@ -52,7 +48,7 @@ function getPhotoUrl(path?: string) {
                 <!-- If Photo Available -->
                 <template v-if="getPhotoForSlot(slot)">
                     <img
-                        :src="getPhotoUrl(getPhotoForSlot(slot)?.original_path)"
+                        :src="getAssetUrl(getPhotoForSlot(slot)?.thumbnail_path || getPhotoForSlot(slot)?.original_path)"
                         :alt="'Foto ' + slot"
                         class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />

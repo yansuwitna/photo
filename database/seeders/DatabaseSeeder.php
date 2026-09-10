@@ -279,6 +279,83 @@ class DatabaseSeeder extends Seeder
             'z_index' => 2,
         ]);
 
+        // Template D: Korean Life4Cuts 4-Strip
+        $t4 = Template::create([
+            'name' => 'Korean Life4Cuts (인생네컷)',
+            'slug' => 'korean-life4cuts-strip',
+            'description' => 'Strip 4 foto vertikal klasik ala photobooth Korea Life4Cuts dengan tanggal dan tipografi estetik.',
+            'category' => 'studio',
+            'photo_count' => 4,
+            'width' => 1200,
+            'height' => 1800,
+            'orientation' => 'portrait',
+            'paper_size' => '4R',
+            'background_color' => '#ffffff',
+            'frame_style' => 'strip',
+            'price' => 30000,
+            'is_active' => true,
+            'is_default' => false,
+        ]);
+
+        TemplateElement::create([
+            'template_id' => $t4->id,
+            'type' => 'text',
+            'content' => 'LIFE FOUR CUTS • 인생네컷',
+            'x' => 5,
+            'y' => 2.5,
+            'width' => 90,
+            'height' => 4,
+            'font_family' => 'Poppins',
+            'font_size' => 26,
+            'font_color' => '#0f172a',
+            'font_weight' => 'bold',
+            'text_align' => 'center',
+            'z_index' => 2,
+        ]);
+
+        for ($i = 1; $i <= 4; $i++) {
+            TemplateElement::create([
+                'template_id' => $t4->id,
+                'type' => 'photo_slot',
+                'slot_index' => $i,
+                'label' => "Foto {$i}",
+                'x' => 12,
+                'y' => 7.5 + (($i - 1) * 20.5),
+                'width' => 76,
+                'height' => 19,
+                'border_width' => 0,
+                'border_radius' => 6,
+                'z_index' => 1,
+            ]);
+        }
+
+        TemplateElement::create([
+            'template_id' => $t4->id,
+            'type' => 'text',
+            'content' => '{date} • INSAENGNEKEOT',
+            'x' => 12,
+            'y' => 92,
+            'width' => 55,
+            'height' => 4,
+            'font_family' => 'Poppins',
+            'font_size' => 18,
+            'font_color' => '#64748b',
+            'font_weight' => 'normal',
+            'text_align' => 'left',
+            'z_index' => 2,
+        ]);
+
+        TemplateElement::create([
+            'template_id' => $t4->id,
+            'type' => 'qr_code',
+            'label' => 'Scan QR',
+            'x' => 74,
+            'y' => 90,
+            'width' => 14,
+            'height' => 7,
+            'z_index' => 3,
+        ]);
+
         // 5. Cameras
         Camera::create([
             'name' => 'Canon EOS R6 Mark II',

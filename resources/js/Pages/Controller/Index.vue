@@ -18,6 +18,7 @@ import {
 } from 'lucide-vue-next';
 import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
+import { getAssetUrl } from '@/utils/url';
 import axios from 'axios';
 
 const props = defineProps<{
@@ -112,11 +113,6 @@ async function runCameraTest() {
 async function runPrinterTest() {
     const res = await deviceStore.testPrinter();
     alert(res.message || 'Uji printer selesai');
-}
-
-function getAssetUrl(path?: string) {
-    if (!path) return '';
-    return '/' + path.replace('public/', 'storage/');
 }
 </script>
 
