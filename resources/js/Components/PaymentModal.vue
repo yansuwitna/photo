@@ -66,7 +66,7 @@ async function confirmPayment() {
         });
 
         if (res.data.success) {
-            emit('paid', res.data.payment);
+            emit('paid', { payment: res.data.payment, session: res.data.session });
             emit('close');
         } else {
             showError('Pembayaran Gagal', res.data.message || 'Transaksi tidak dapat diselesaikan.');

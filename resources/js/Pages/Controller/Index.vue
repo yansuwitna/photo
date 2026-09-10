@@ -274,6 +274,14 @@ async function runPrinterTest() {
                     <RefreshCw class="w-4 h-4" />
                 </button>
                 <button
+                    @click="router.visit('/print-station')"
+                    class="py-2 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all"
+                    title="Buka Web Print Station untuk cetak otomatis di PC ini"
+                >
+                    <Printer class="w-3.5 h-3.5 text-amber-400" />
+                    <span>Print Station</span>
+                </button>
+                <button
                     @click="router.visit('/')"
                     class="py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-semibold flex items-center gap-1.5"
                 >

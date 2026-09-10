@@ -132,18 +132,28 @@ class PrinterManager
             \Illuminate\Support\Facades\Log::warning("Gagal menyimpan DeviceLog: " . $e->getMessage());
         }
 
-        // Jika printer terdaftar sebagai remote agent (atau server berjalan online di Linux)
-        $isRemoteAgent = str_contains(strtolower($this->printerModel?->connection_type ?? ''), 'pc') 
+        // Jika mode Web Print Station diaktifkan ATAU printer terdaftar sebagai remote agent
+        $isMock = $this->printerModel?->adapter === 'mock';
+        $webStationSetting = filter_var(Setting::get('web_print_station_enabled', true), FILTER_VALIDATE_BOOLEAN);
+
+        $isWebStation = (!$isMock && $webStationSetting)
+            || str_contains(strtolower($this->printerModel?->connection_type ?? ''), 'web')
+            || str_contains(strtolower($this->printerModel?->name ?? ''), 'web')
+            || str_contains(strtolower($this->printerModel?->name ?? ''), 'browser');
+
+        $isRemoteAgent = $isWebStation
+            || str_contains(strtolower($this->printerModel?->connection_type ?? ''), 'pc') 
             || (PHP_OS_FAMILY !== 'Windows' && $this->printerModel?->adapter === 'windows');
 
         if ($isRemoteAgent) {
             if ($job) {
                 $job->update(['status' => 'pending', 'progress' => 10]);
             }
+            $targetDesc = $isWebStation ? "Web Print Station (Browser Vue)" : "remote agent di PC lokal ({$this->printerModel?->name})";
             return [
                 'success' => true,
                 'status' => 'pending',
-                'message' => "Pekerjaan cetak dikirim ke antrean remote agent di PC lokal ({$this->printerModel?->name}).",
+                'message' => "Pekerjaan cetak dikirim ke antrean {$targetDesc}.",
                 'printer' => $this->printerModel?->name,
                 'print_job_id' => $job?->id,
                 'copies' => $copies,

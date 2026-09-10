@@ -406,7 +406,19 @@ async function triggerPrint() {
         showPaymentModal.value = true;
         return;
     }
+    await executePrint();
+}
 
+function handlePaymentSuccess(data?: any) {
+    showPaymentModal.value = false;
+    currentSession.value.payment_status = 'paid';
+    if (data?.session) {
+        currentSession.value = { ...currentSession.value, ...data.session, payment_status: 'paid' };
+    }
+    executePrint();
+}
+
+async function executePrint() {
     showPrintModal.value = true;
     isPrinting.value = true;
     isPrintComplete.value = false;
@@ -431,7 +443,7 @@ async function triggerPrint() {
             isPrinting.value = false;
             isPrintComplete.value = true;
             audioStore.playPrintDone();
-            audioStore.speakInstruction('Pencetakan selesai! Silakan ambil foto Anda di tray printer.');
+            audioStore.speakInstruction('Pencetakan berhasil dikirim ke print station! Silakan ambil foto Anda di tray printer.');
             setTimeout(() => {
                 handleDoneSession();
             }, 1600);
@@ -1143,11 +1155,11 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
         <PaymentModal
             :show="showPaymentModal"
             :sessionId="currentSession.id"
-            :basePrice="currentSession.event?.default_price || 25000"
-            :extraPrintPrice="currentSession.event?.extra_print_price || 10000"
+            :basePrice="currentSession.event?.default_price || 0"
+            :extraPrintPrice="currentSession.event?.extra_print_price || 0"
             :copies="printCopies"
             @close="showPaymentModal = false"
-            @paid="triggerPrint"
+            @paid="handlePaymentSuccess"
         />
     </KioskLayout>
 </template>

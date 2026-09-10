@@ -16,7 +16,8 @@ import {
     Menu, 
     X,
     CheckCircle2,
-    ShieldCheck
+    ShieldCheck,
+    Printer
 } from 'lucide-vue-next';
 import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
@@ -33,6 +34,7 @@ const navigation = [
     { name: 'Kelola Event', href: '/admin/events', icon: Calendar },
     { name: 'Template Desain', href: '/admin/templates', icon: Layers },
     { name: 'Pusat Perangkat', href: '/admin/devices', icon: Cpu },
+    { name: 'Print Station (PC)', href: '/print-station', icon: Printer },
     { name: 'Galeri Foto Sesi', href: '/admin/gallery', icon: Image },
     { name: 'Promo & Voucher', href: '/admin/promos', icon: Tag },
     { name: 'Laporan & Statistik', href: '/admin/reports', icon: BarChart3 },

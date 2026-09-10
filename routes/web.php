@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\DeviceApiController;
 use App\Http\Controllers\Api\PromoApiController;
 use App\Http\Controllers\Api\FrameApiController;
 use App\Http\Controllers\Api\PrintAgentController;
+use App\Http\Controllers\PrintStationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -44,6 +45,9 @@ Route::middleware(['auth'])->group(function () {
     // REMOTE OPERATOR TABLET CONTROLLER (LAN / WI-FI)
     Route::get('/controller', [ControllerPageController::class, 'index'])->name('controller.index');
     Route::get('/api/controller/status', [ControllerPageController::class, 'status']);
+
+    // REAL-TIME WEB PRINT STATION (PC CONNECTED TO PRINTER)
+    Route::get('/print-station', [PrintStationController::class, 'index'])->name('print-station.index');
 
     // ADMIN CONTROL PANEL
     Route::prefix('admin')->group(function () {
@@ -109,6 +113,13 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/agent/sync-printers', [PrintAgentController::class, 'syncPrinters']);
         Route::get('/agent/jobs', [PrintAgentController::class, 'getPendingJobs']);
         Route::post('/agent/jobs/{jobId}/update', [PrintAgentController::class, 'updateJob']);
+
+        // Web Print Station API (Realtime Vue Direct Browser Printing)
+        Route::get('/print-station/jobs', [PrintStationController::class, 'jobs']);
+        Route::post('/print-station/toggle', [PrintStationController::class, 'toggle']);
+        Route::post('/print-station/test', [PrintStationController::class, 'testPrint']);
+        Route::post('/print-station/jobs/{jobId}/reprint', [PrintStationController::class, 'reprint']);
+        Route::post('/print-station/jobs/{jobId}/update', [PrintAgentController::class, 'updateJob']);
 
         // Admin API
         Route::post('/admin/events', [EventController::class, 'store']);

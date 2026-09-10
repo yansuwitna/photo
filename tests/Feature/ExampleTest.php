@@ -305,6 +305,129 @@ class ExampleTest extends TestCase
             ->has('active_paper_size')
         );
     }
+
+    public function test_print_station_page_and_apis_work_properly(): void
+    {
+        $user = User::factory()->create();
+
+        // 1. Check /print-station page loads
+        $res = $this->actingAs($user)->get('/print-station');
+        $res->assertStatus(200);
+        $res->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->component('PrintStation/Index')
+            ->has('active_printer')
+            ->has('active_paper_size')
+            ->has('web_station_enabled')
+            ->has('stats')
+        );
+
+        // 2. Queue a test print
+        $testRes = $this->actingAs($user)->postJson('/api/print-station/test', [
+            'copies' => 1,
+            'paper_size' => '4R',
+        ]);
+        $testRes->assertStatus(200)->assertJson(['success' => true]);
+        $jobId = $testRes->json('job_id');
+        $this->assertNotNull($jobId);
+
+        // 3. Fetch jobs from print station api
+        $jobsRes = $this->actingAs($user)->getJson('/api/print-station/jobs');
+        $jobsRes->assertStatus(200)
+            ->assertJson(['success' => true])
+            ->assertJsonStructure(['pending_jobs', 'recent_jobs']);
+        $this->assertTrue(collect($jobsRes->json('pending_jobs'))->pluck('id')->contains($jobId));
+
+        // 4. Update job to completed
+        $updateRes = $this->actingAs($user)->postJson("/api/print-station/jobs/{$jobId}/update", [
+            'status' => 'completed',
+            'progress' => 100,
+        ]);
+        $updateRes->assertStatus(200)->assertJson(['success' => true]);
+
+        // 5. Reprint job
+        $reprintRes = $this->actingAs($user)->postJson("/api/print-station/jobs/{$jobId}/reprint");
+        $reprintRes->assertStatus(200)->assertJson(['success' => true]);
+        $this->assertEquals('pending', \App\Models\PrintJob::find($jobId)->status);
+
+        // 6. Toggle station
+        $toggleRes = $this->actingAs($user)->postJson('/api/print-station/toggle', [
+            'enabled' => false,
+        ]);
+        $toggleRes->assertStatus(200)->assertJson(['success' => true, 'enabled' => false]);
+    }
+
+    public function test_payment_and_subsequent_print_reaches_print_station(): void
+    {
+        $user = User::factory()->create();
+        $event = \App\Models\Event::create([
+            'name' => 'Paid Event Test',
+            'slug' => 'paid-event-test',
+            'default_price' => 25000,
+            'extra_print_price' => 10000,
+            'is_active' => true,
+        ]);
+
+        $template = \App\Models\Template::create([
+            'event_id' => $event->id,
+            'name' => 'Template Paid',
+            'slug' => 'template-paid',
+            'width' => 1200,
+            'height' => 1800,
+            'paper_size' => '4R',
+            'is_active' => true,
+        ]);
+
+        $finalPhoto = "events/test/sessions/test-paid/final/FINAL.jpg";
+        \Illuminate\Support\Facades\Storage::disk('public')->put($finalPhoto, 'test image');
+
+        $session = \App\Models\BoothSession::create([
+            'session_code' => 'PB-PAID-01',
+            'event_id' => $event->id,
+            'template_id' => $template->id,
+            'total_photos_required' => 3,
+            'photos_captured_count' => 3,
+            'final_photo_path' => $finalPhoto,
+            'status' => 'ready_to_print',
+            'payment_status' => 'unpaid',
+        ]);
+
+        // 1. Process payment
+        $payRes = $this->actingAs($user)->postJson("/api/session/{$session->id}/payment", [
+            'method' => 'cash',
+            'amount_paid' => 25000,
+            'copies' => 1,
+        ]);
+        $payRes->assertStatus(200)->assertJson(['success' => true]);
+        $this->assertEquals('paid', $session->fresh()->payment_status);
+
+        // 2. Trigger print with Web Print Station enabled
+        \App\Models\Setting::set('web_print_station_enabled', '1', 'hardware');
+
+        $printer = \App\Models\Printer::create([
+            'name' => 'Epson L1210 Kiosk',
+            'brand' => 'Epson',
+            'adapter' => 'windows',
+            'connection_type' => 'USB (PC Local)',
+            'default_paper_size' => '4R',
+        ]);
+        \App\Models\Setting::set('active_printer_id', $printer->id, 'hardware');
+
+        $printRes = $this->actingAs($user)->postJson("/api/session/{$session->id}/print", [
+            'copies' => 1,
+            'paper_size' => '4R',
+        ]);
+        $printRes->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'status' => 'pending',
+            ]);
+
+        // 3. Verify it is visible in Print Station queue
+        $stationJobs = $this->actingAs($user)->getJson('/api/print-station/jobs');
+        $stationJobs->assertStatus(200);
+        $pendingIds = collect($stationJobs->json('pending_jobs'))->pluck('session_id')->all();
+        $this->assertContains($session->id, $pendingIds);
+    }
 }
 
 
