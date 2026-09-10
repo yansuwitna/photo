@@ -37,10 +37,12 @@ class KioskController extends Controller
         if ($template) {
             $template->loadMissing('elements');
         }
+        $templates = Template::where('is_active', true)->with('elements')->get();
 
         return Inertia::render('Kiosk/Camera', [
             'session' => $session,
             'template' => $template,
+            'templates' => $templates,
         ]);
     }
 

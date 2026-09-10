@@ -101,6 +101,8 @@ Route::prefix('api')->group(function () {
     Route::post('/admin/events', [EventController::class, 'store']);
     Route::post('/admin/events/{id}/activate', [EventController::class, 'activate']);
     Route::post('/admin/templates/save', [TemplateController::class, 'save']);
+    Route::post('/admin/templates/{id}/toggle', [TemplateController::class, 'toggle']);
+    Route::delete('/admin/templates/{id}', [TemplateController::class, 'destroy']);
     Route::post('/admin/promos', [PromoAdminController::class, 'store']);
     Route::get('/admin/reports/export-csv', [ReportController::class, 'exportCsv']);
     Route::post('/admin/settings', [SettingController::class, 'save']);

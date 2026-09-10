@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import type { Template, TemplateElement } from '@/types';
 import { Camera, QrCode, RotateCcw, Lock } from 'lucide-vue-next';
 import { getAssetUrl } from '@/utils/url';
+import type { PhotoboothSticker } from '@/types/stickers';
 
 const props = withDefaults(
     defineProps<{
@@ -13,10 +14,11 @@ const props = withDefaults(
         countdown?: number;
         activeFrame?: string | null;
         backgroundColor?: string;
-        activeFilterCss?: string;
+        frameTheme?: string | null;
         mirrorMode?: boolean;
         isInteractiveReview?: boolean;
         isFlashingSlot?: number | null;
+        activeSticker?: PhotoboothSticker | null;
     }>(),
     {
         capturedPhotos: () => ({}),
@@ -24,10 +26,11 @@ const props = withDefaults(
         countdown: 3,
         activeFrame: null,
         backgroundColor: '#ffffff',
-        activeFilterCss: 'none',
+        frameTheme: 'classic_white',
         mirrorMode: true,
         isInteractiveReview: false,
         isFlashingSlot: null,
+        activeSticker: null,
     }
 );
 
@@ -269,6 +272,26 @@ function setActiveVideoRef(el: any) {
     }
 }
 
+// Background Theme Styling (Admin Template background image, color, or striped pattern)
+const canvasBackground = computed(() => {
+    if (props.template?.background_image) {
+        return `url(${getAssetUrl(props.template.background_image)}) center / cover no-repeat`;
+    }
+
+    const nameOrSlug = `${props.template?.slug || ''} ${props.template?.name || ''}`.toLowerCase();
+    if (nameOrSlug.includes('pink bows') || nameOrSlug.includes('beautyplus') || props.frameTheme === 'pink_bows') {
+        return 'repeating-linear-gradient(90deg, #ffcde2, #ffcde2 24px, #ffffff 24px, #ffffff 48px)';
+    }
+    if (nameOrSlug.includes('lavender') || nameOrSlug.includes('purple')) {
+        return 'repeating-linear-gradient(90deg, #f3e8ff, #f3e8ff 24px, #ffffff 24px, #ffffff 48px)';
+    }
+    if (nameOrSlug.includes('mint')) {
+        return 'repeating-linear-gradient(90deg, #dcfce7, #dcfce7 24px, #ffffff 24px, #ffffff 48px)';
+    }
+
+    return props.template?.background_color || props.backgroundColor || '#ffffff';
+});
+
 onMounted(async () => {
     await initWebcam();
 });
@@ -437,16 +460,13 @@ function captureActiveSlot(slotIndex: number): string | null {
         const ctx = offscreen.getContext('2d');
         if (!ctx) return null;
 
-        if (props.activeFilterCss && props.activeFilterCss !== 'none') {
-            ctx.filter = props.activeFilterCss;
-        }
-
         if (props.mirrorMode) {
             ctx.translate(offscreen.width, 0);
             ctx.scale(-1, 1);
         }
 
         ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
         return offscreen.toDataURL('image/jpeg', 0.95);
     }
 
@@ -505,7 +525,7 @@ defineExpose({
         class="relative mx-auto rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.85)] border-2 border-white/20 select-none transition-all duration-300"
         :style="{
             aspectRatio: `${templateWidth} / ${templateHeight}`,
-            backgroundColor: backgroundColor || '#ffffff',
+            background: canvasBackground,
             maxHeight: '74vh',
             maxWidth: '100%',
             height: '100%',
@@ -527,6 +547,8 @@ defineExpose({
                     borderColor: el.border_color || 'transparent',
                     borderStyle: el.border_width ? 'solid' : 'none',
                     zIndex: isSlotActiveLive(el.slot_index) ? 20 : (el.z_index || 1),
+                    transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+                    transformOrigin: 'center center',
                 }"
                 :class="[
                     isSlotActiveLive(el.slot_index)
@@ -566,7 +588,7 @@ defineExpose({
                 <!-- CASE B: ACTIVE WEBCAM LIVE VIEW IN THIS EXACT SLOT -->
                 <template v-else-if="isSlotActiveLive(el.slot_index)">
                     <div class="relative w-full h-full bg-black overflow-hidden flex items-center justify-center">
-                        <!-- Live Video Stream -->
+                        <!-- Live Video Stream (Crystal Clear, Natural) -->
                         <video
                             v-show="hasActiveStream"
                             :ref="setActiveVideoRef"
@@ -575,7 +597,6 @@ defineExpose({
                             muted
                             class="w-full h-full object-cover transition-transform duration-150"
                             :class="{ '-scale-x-100': mirrorMode }"
-                            :style="{ filter: activeFilterCss }"
                         ></video>
 
                         <!-- Fallback Canvas if Simulated -->
@@ -586,7 +607,6 @@ defineExpose({
                             height="480"
                             class="w-full h-full object-cover"
                             :class="{ '-scale-x-100': mirrorMode }"
-                            :style="{ filter: activeFilterCss }"
                         ></canvas>
 
                         <!-- Pro Viewfinder Corner Brackets -->
@@ -681,13 +701,76 @@ defineExpose({
             </div>
         </template>
 
+        <!-- 3.5 DECORATIVE STICKER / BADGE (Ala BeautyPlus) -->
+        <div
+            v-if="activeSticker && activeSticker.id !== 'none'"
+            class="absolute bottom-3 left-1/2 -translate-x-1/2 z-25 pointer-events-none select-none max-w-[85%]"
+        >
+            <div
+                v-if="activeSticker.isTextStamp"
+                class="px-3.5 py-1 rounded-full shadow-lg border flex flex-col items-center justify-center tracking-wider text-center"
+                :style="{
+                    backgroundColor: activeSticker.bg || '#0f172a',
+                    borderColor: activeSticker.color || '#cbd5e1',
+                    color: activeSticker.color || '#ffffff',
+                }"
+            >
+                <span class="text-[8px] sm:text-[9px] font-black uppercase tracking-widest leading-tight">{{ activeSticker.badgeText }}</span>
+                <span v-if="activeSticker.badgeSubtext" class="text-[6px] tracking-normal opacity-90 -mt-0.5 leading-tight">{{ activeSticker.badgeSubtext }}</span>
+            </div>
+            <div
+                v-else
+                class="w-9 h-9 rounded-full flex items-center justify-center text-lg shadow-lg border border-white/50"
+                :style="{ backgroundColor: activeSticker.bg || '#fce7f3' }"
+            >
+                <span>{{ activeSticker.symbol }}</span>
+            </div>
+        </div>
+
+        <!-- 3.6 PINK BOWS THEME DECORATIONS (Identik Screenshot 6) -->
+        <template v-if="template?.slug?.includes('pink') || template?.name?.toLowerCase().includes('beautyplus') || frameTheme === 'pink_bows' || activeSticker?.hasStripes || activeSticker?.id === 'pink_bows'">
+            <!-- 1. Double Hearts di Pojok Kiri Atas Slot 1 -->
+            <div class="absolute top-[2.5%] left-[5%] z-26 pointer-events-none flex items-center -space-x-1 drop-shadow-md select-none">
+                <span class="text-xl sm:text-2xl transform -rotate-12">🤍</span>
+                <span class="text-xl sm:text-2xl transform rotate-6">💗</span>
+            </div>
+
+            <!-- 2. Pita Pink Cantik di Pembatas Slot 1 & 2 (Kanan) -->
+            <div class="absolute top-[31%] right-[4%] z-26 pointer-events-none transform rotate-12 drop-shadow-md select-none">
+                <svg class="w-10 h-10 sm:w-12 sm:h-12 text-pink-400" viewBox="0 0 100 100" fill="none">
+                    <path d="M50 50 C28 20, 8 40, 44 52 Z" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M50 50 C72 20, 92 40, 56 52 Z" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M48 52 C32 72, 22 88, 28 96 C36 86, 44 76, 50 56" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M52 52 C68 72, 78 88, 72 96 C64 86, 56 76, 50 56" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <circle cx="50" cy="50" r="7.5" fill="#fda4af" stroke="#db2777" stroke-width="2.5"/>
+                </svg>
+            </div>
+
+            <!-- 3. Double Hearts di Pembatas Slot 2 & 3 (Tengah) -->
+            <div class="absolute top-[59.5%] left-1/2 -translate-x-1/2 z-26 pointer-events-none flex items-center -space-x-1 drop-shadow-md select-none">
+                <span class="text-xl sm:text-2xl transform -rotate-12">🤍</span>
+                <span class="text-xl sm:text-2xl transform rotate-6">💗</span>
+            </div>
+
+            <!-- 4. Pita Pink Cantik di Margin Bawah (Kiri) -->
+            <div class="absolute bottom-[2%] left-[6%] z-26 pointer-events-none transform -rotate-12 drop-shadow-md select-none">
+                <svg class="w-11 h-11 sm:w-14 sm:h-14 text-pink-400" viewBox="0 0 100 100" fill="none">
+                    <path d="M50 50 C28 20, 8 40, 44 52 Z" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M50 50 C72 20, 92 40, 56 52 Z" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M48 52 C32 72, 22 88, 28 96 C36 86, 44 76, 50 56" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <path d="M52 52 C68 72, 78 88, 72 96 C64 86, 56 76, 50 56" fill="#f472b6" stroke="#db2777" stroke-width="2.5"/>
+                    <circle cx="50" cy="50" r="7.5" fill="#fda4af" stroke="#db2777" stroke-width="2.5"/>
+                </svg>
+            </div>
+        </template>
+
         <!-- 4. OVERLAY FRAME TRANSPARENT PNG ON TOP OF ALL ELEMENTS -->
         <div
-            v-if="activeFrame"
+            v-if="template?.overlay_image || activeFrame"
             class="absolute inset-0 pointer-events-none z-30 overflow-hidden"
         >
             <img
-                :src="getAssetUrl(activeFrame)"
+                :src="getAssetUrl(activeFrame || template?.overlay_image!)"
                 alt="Frame Overlay"
                 class="w-full h-full object-fill"
             />

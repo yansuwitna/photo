@@ -30,10 +30,33 @@ class PhotoComposer
         imagealphablending($canvas, true);
         imagesavealpha($canvas, true);
 
-        // Isi warna latar belakang (custom sesi jika diubah user, atau bawaan template)
-        $bgHex = ($session->metadata['custom_background_color'] ?? null) ?: ($template->background_color ?: '#ffffff');
-        $bgColor = $this->hexToColor($canvas, $bgHex);
-        imagefilledrectangle($canvas, 0, 0, $width, $height, $bgColor);
+        // Cek tema garis-garis atau warna solid
+        $theme = $session->metadata['frame_theme'] ?? ($session->metadata['custom_sticker']['id'] ?? '');
+        $isPinkBows = ($theme === 'pink_bows' || ($session->metadata['custom_sticker']['id'] ?? '') === 'pink_bows');
+        $isStripes = in_array($theme, ['pink_bows', 'pink_stripes', 'purple_stripes', 'mint_stripes', 'blue_stripes', 'yellow_stripes'])
+            || (!empty($session->metadata['custom_sticker']['hasStripes']));
+
+        if ($isStripes) {
+            $stripeColorHex = match ($theme) {
+                'purple_stripes' => '#f3e8ff',
+                'mint_stripes' => '#dcfce7',
+                'blue_stripes' => '#e0f2fe',
+                'yellow_stripes' => '#fef9c3',
+                default => '#ffcde2',
+            };
+            $stripeW = 40;
+            $stripeCol = $this->hexToColor($canvas, $stripeColorHex);
+            $whiteCol = $this->hexToColor($canvas, '#ffffff');
+            for ($sx = 0; $sx < $width; $sx += $stripeW * 2) {
+                imagefilledrectangle($canvas, $sx, 0, min($width, $sx + $stripeW), $height, $stripeCol);
+                imagefilledrectangle($canvas, $sx + $stripeW, 0, min($width, $sx + $stripeW * 2), $height, $whiteCol);
+            }
+        } else {
+            // Isi warna latar belakang (custom sesi jika diubah user, atau bawaan template)
+            $bgHex = ($session->metadata['custom_background_color'] ?? null) ?: ($template->background_color ?: '#ffffff');
+            $bgColor = $this->hexToColor($canvas, $bgHex);
+            imagefilledrectangle($canvas, 0, 0, $width, $height, $bgColor);
+        }
 
         // Jika ada background image
         $bgImg = $template->background_image;
@@ -93,6 +116,12 @@ class PhotoComposer
             if ($overlayPath && file_exists($overlayPath)) {
                 $this->overlayImageOnCanvas($canvas, $overlayPath, 0, 0, $width, $height);
             }
+        }
+
+        // Jika ada stiker dekoratif (dari metadata sesi kustom ala BeautyPlus)
+        $sticker = $session->metadata['custom_sticker'] ?? null;
+        if ($sticker && is_array($sticker) && !empty($sticker['id']) && $sticker['id'] !== 'none') {
+            $this->drawStickerOnCanvas($canvas, $sticker, $width, $height);
         }
 
         // Simpan hasil render
@@ -205,10 +234,28 @@ class PhotoComposer
             $this->drawSlotBorder($slotCanvas, $w, $h, $radius, $borderWidth, $borderColorHex);
         }
 
-        // 5. Tempelkan kanvas slot yang sudah bulat dan berbingkai ke kanvas utama
-        imagealphablending($canvas, true);
-        imagesavealpha($canvas, true);
-        imagecopy($canvas, $slotCanvas, $x, $y, 0, 0, $w, $h);
+        // 5. Rotasi slot jika ditentukan (rotasi foto)
+        $rotation = (float)($element->rotation ?? 0);
+        if (abs($rotation) > 0.01) {
+            $rotated = imagerotate($slotCanvas, -$rotation, $transparent);
+            if ($rotated) {
+                imagesavealpha($rotated, true);
+                imagealphablending($canvas, true);
+                imagesavealpha($canvas, true);
+                $rotW = imagesx($rotated);
+                $rotH = imagesy($rotated);
+                $centerX = $x + ($w / 2.0);
+                $centerY = $y + ($h / 2.0);
+                $drawX = (int)round($centerX - ($rotW / 2.0));
+                $drawY = (int)round($centerY - ($rotH / 2.0));
+                imagecopy($canvas, $rotated, $drawX, $drawY, 0, 0, $rotW, $rotH);
+                imagedestroy($rotated);
+            }
+        } else {
+            imagealphablending($canvas, true);
+            imagesavealpha($canvas, true);
+            imagecopy($canvas, $slotCanvas, $x, $y, 0, 0, $w, $h);
+        }
         imagedestroy($slotCanvas);
     }
 
@@ -244,8 +291,26 @@ class PhotoComposer
         $label = "SLOT " . ($element->slot_index ?: 1);
         imagestring($slotCanvas, 4, (int)($w / 2) - 30, (int)($h / 2) - 8, $label, $gray);
 
-        imagealphablending($canvas, true);
-        imagecopy($canvas, $slotCanvas, $x, $y, 0, 0, $w, $h);
+        $rotation = (float)($element->rotation ?? 0);
+        if (abs($rotation) > 0.01) {
+            $rotated = imagerotate($slotCanvas, -$rotation, $transparent);
+            if ($rotated) {
+                imagesavealpha($rotated, true);
+                imagealphablending($canvas, true);
+                imagesavealpha($canvas, true);
+                $rotW = imagesx($rotated);
+                $rotH = imagesy($rotated);
+                $centerX = $x + ($w / 2.0);
+                $centerY = $y + ($h / 2.0);
+                $drawX = (int)round($centerX - ($rotW / 2.0));
+                $drawY = (int)round($centerY - ($rotH / 2.0));
+                imagecopy($canvas, $rotated, $drawX, $drawY, 0, 0, $rotW, $rotH);
+                imagedestroy($rotated);
+            }
+        } else {
+            imagealphablending($canvas, true);
+            imagecopy($canvas, $slotCanvas, $x, $y, 0, 0, $w, $h);
+        }
         imagedestroy($slotCanvas);
     }
 
@@ -481,5 +546,200 @@ class PhotoComposer
         }
 
         return $items;
+    }
+
+    /**
+     * Gambar stiker / badge dekoratif ala BeautyPlus pada strip foto
+     */
+    protected function drawStickerOnCanvas($canvas, array $sticker, int $width, int $height): void
+    {
+        $fontFile = 'C:/Windows/Fonts/arialbd.ttf';
+        if (!file_exists($fontFile)) {
+            $fontFile = 'C:/Windows/Fonts/arial.ttf';
+        }
+
+        if (($sticker['id'] ?? '') === 'pink_bows') {
+            $this->drawPinkBowsThemeDecorations($canvas, $width, $height);
+            return;
+        }
+
+        if (!empty($sticker['isTextStamp'])) {
+            // Badge teks elegan di bagian bawah foto strip
+            $stampW = (int)($width * 0.46);
+            $stampH = 56;
+            $stampX = (int)(($width - $stampW) / 2);
+            $stampY = $height - 130;
+
+            $badgeCanvas = imagecreatetruecolor($stampW, $stampH);
+            imagealphablending($badgeCanvas, false);
+            imagesavealpha($badgeCanvas, true);
+            $transparent = imagecolorallocatealpha($badgeCanvas, 0, 0, 0, 127);
+            imagefilledrectangle($badgeCanvas, 0, 0, $stampW, $stampH, $transparent);
+
+            // Background badge
+            imagealphablending($badgeCanvas, true);
+            $bgHex = $sticker['bg'] ?? '#0f172a';
+            $bgCol = $this->hexToColor($badgeCanvas, $bgHex);
+            imagefilledrectangle($badgeCanvas, 0, 0, $stampW, $stampH, $bgCol);
+
+            // Radius 10px
+            $this->applyBorderRadiusMask($badgeCanvas, $stampW, $stampH, 12, $transparent);
+
+            // Border badge
+            $borderCol = !empty($sticker['color']) ? $sticker['color'] : '#cbd5e1';
+            $this->drawSlotBorder($badgeCanvas, $stampW, $stampH, 12, 2, $borderCol);
+
+            // Text
+            $title = strtoupper($sticker['badgeText'] ?? '');
+            $sub = $sticker['badgeSubtext'] ?? '';
+            $textCol = $this->hexToColor($badgeCanvas, $sticker['color'] ?? '#ffffff');
+
+            if (file_exists($fontFile) && function_exists('imagettfbbox')) {
+                $bbox = imagettfbbox(14, 0, $fontFile, $title);
+                $tw = abs($bbox[2] - $bbox[0]);
+                $tx = (int)(($stampW - $tw) / 2);
+                $ty = !empty($sub) ? 26 : 34;
+                imagettftext($badgeCanvas, 14, 0, max(5, $tx), $ty, $textCol, $fontFile, $title);
+
+                if (!empty($sub)) {
+                    $sbbox = imagettfbbox(9, 0, $fontFile, $sub);
+                    $sw = abs($sbbox[2] - $sbbox[0]);
+                    $sx = (int)(($stampW - $sw) / 2);
+                    imagettftext($badgeCanvas, 9, 0, max(5, $sx), 44, $textCol, $fontFile, $sub);
+                }
+            } else {
+                imagestring($badgeCanvas, 4, 15, 12, $title, $textCol);
+            }
+
+            imagealphablending($canvas, true);
+            imagecopy($canvas, $badgeCanvas, $stampX, $stampY, 0, 0, $stampW, $stampH);
+            imagedestroy($badgeCanvas);
+        } elseif (!empty($sticker['name'])) {
+            // Sticker badge or symbol
+            $stampSize = 80;
+            $stampX = (int)(($width - $stampSize) / 2);
+            $stampY = $height - 145;
+
+            $badgeCanvas = imagecreatetruecolor($stampSize, $stampSize);
+            imagealphablending($badgeCanvas, false);
+            imagesavealpha($badgeCanvas, true);
+            $transparent = imagecolorallocatealpha($badgeCanvas, 0, 0, 0, 127);
+            imagefilledrectangle($badgeCanvas, 0, 0, $stampSize, $stampSize, $transparent);
+
+            imagealphablending($badgeCanvas, true);
+            $bgHex = $sticker['bg'] ?? '#fce7f3';
+            $bgCol = $this->hexToColor($badgeCanvas, $bgHex);
+            imagefilledellipse($badgeCanvas, (int)($stampSize / 2), (int)($stampSize / 2), $stampSize - 2, $stampSize - 2, $bgCol);
+
+            // Border lingkaran halus
+            $borderCol = imagecolorallocatealpha($badgeCanvas, 244, 114, 182, 30);
+            imageellipse($badgeCanvas, (int)($stampSize / 2), (int)($stampSize / 2), $stampSize - 4, $stampSize - 4, $borderCol);
+
+            imagealphablending($canvas, true);
+            imagecopy($canvas, $badgeCanvas, $stampX, $stampY, 0, 0, $stampSize, $stampSize);
+            imagedestroy($badgeCanvas);
+        }
+    }
+
+    /**
+     * Gambar dekorasi tema Pink Bows: Hati ganda & Pita Pink (Screenshot 6)
+     */
+    protected function drawPinkBowsThemeDecorations($canvas, int $width, int $height): void
+    {
+        // 1. Double hearts di pojok kiri atas slot 1
+        $this->drawDoubleHearts($canvas, (int)($width * 0.08), (int)($height * 0.035), 42);
+
+        // 2. Pita Pink di pembatas slot 1 & 2 (sisi kanan)
+        $this->drawRibbonBow($canvas, (int)($width * 0.84), (int)($height * 0.315), 65);
+
+        // 3. Double hearts di pembatas tengah slot 2 & 3
+        $this->drawDoubleHearts($canvas, (int)($width * 0.50), (int)($height * 0.605), 42);
+
+        // 4. Pita Pink di margin bawah sisi kiri
+        $this->drawRibbonBow($canvas, (int)($width * 0.12), (int)($height * 0.90), 75);
+    }
+
+    protected function drawDoubleHearts($canvas, int $cx, int $cy, int $size): void
+    {
+        // White heart with border
+        $white = imagecolorallocate($canvas, 255, 255, 255);
+        $pink = imagecolorallocate($canvas, 244, 114, 182);
+        $darkPink = imagecolorallocate($canvas, 219, 39, 119);
+
+        // Left white heart
+        $this->drawFilledHeart($canvas, $cx - (int)($size * 0.35), $cy, (int)($size * 0.7), $white, $darkPink);
+        // Right pink heart
+        $this->drawFilledHeart($canvas, $cx + (int)($size * 0.15), $cy, (int)($size * 0.75), $pink, $darkPink);
+    }
+
+    protected function drawFilledHeart($canvas, int $cx, int $cy, int $size, int $fillColor, int $borderColor): void
+    {
+        $r = (int)($size / 3);
+        imagefilledellipse($canvas, $cx - $r / 2, $cy - $r / 2, $r, $r, $fillColor);
+        imagefilledellipse($canvas, $cx + $r / 2, $cy - $r / 2, $r, $r, $fillColor);
+        imageellipse($canvas, $cx - $r / 2, $cy - $r / 2, $r, $r, $borderColor);
+        imageellipse($canvas, $cx + $r / 2, $cy - $r / 2, $r, $r, $borderColor);
+
+        // Bottom triangle of heart
+        $points = [
+            $cx - $r, $cy - $r / 4,
+            $cx + $r, $cy - $r / 4,
+            $cx, $cy + (int)($size * 0.6)
+        ];
+        imagefilledpolygon($canvas, $points, $fillColor);
+        imagepolygon($canvas, $points, $borderColor);
+    }
+
+    protected function drawRibbonBow($canvas, int $cx, int $cy, int $size): void
+    {
+        $pink = imagecolorallocate($canvas, 244, 114, 182);
+        $lightPink = imagecolorallocate($canvas, 253, 164, 175);
+        $darkPink = imagecolorallocate($canvas, 219, 39, 119);
+
+        $w = (int)($size * 0.5);
+        $h = (int)($size * 0.35);
+
+        // Left bow loop
+        $leftLoop = [
+            $cx, $cy,
+            $cx - $w, $cy - $h,
+            $cx - (int)($w * 1.1), $cy + $h,
+        ];
+        imagefilledpolygon($canvas, $leftLoop, $pink);
+        imagepolygon($canvas, $leftLoop, $darkPink);
+
+        // Right bow loop
+        $rightLoop = [
+            $cx, $cy,
+            $cx + $w, $cy - $h,
+            $cx + (int)($w * 1.1), $cy + $h,
+        ];
+        imagefilledpolygon($canvas, $rightLoop, $pink);
+        imagepolygon($canvas, $rightLoop, $darkPink);
+
+        // Hanging ribbon tails
+        $tailW = (int)($size * 0.25);
+        $tailH = (int)($size * 0.65);
+        $leftTail = [
+            $cx - 4, $cy + 4,
+            $cx - $tailW, $cy + $tailH,
+            $cx - (int)($tailW * 0.6), $cy + (int)($tailH * 0.8),
+            $cx, $cy + 6
+        ];
+        imagefilledpolygon($canvas, $leftTail, $pink);
+        imagepolygon($canvas, $leftTail, $darkPink);
+
+        $rightTail = [
+            $cx + 4, $cy + 4,
+            $cx + $tailW, $cy + $tailH,
+            $cx + (int)($tailW * 0.6), $cy + (int)($tailH * 0.8),
+            $cx, $cy + 6
+        ];
+        imagefilledpolygon($canvas, $rightTail, $pink);
+        imagepolygon($canvas, $rightTail, $darkPink);
+
+        // Center knot
+        imagefilledellipse($canvas, $cx, $cy, (int)($size * 0.22), (int)($size * 0.22), $lightPink);
+        imageellipse($canvas, $cx, $cy, (int)($size * 0.22), (int)($size * 0.22), $darkPink);
     }
 }

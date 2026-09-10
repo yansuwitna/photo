@@ -5,7 +5,7 @@ import KioskLayout from '@/Layouts/KioskLayout.vue';
 import LiveTemplateCanvas from '@/Components/LiveTemplateCanvas.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
-import type { BoothSession, Template, SessionPhoto } from '@/types';
+import type { BoothSession, Template, SessionPhoto, TemplateElement } from '@/types';
 import { 
     Camera, 
     RotateCcw, 
@@ -16,18 +16,24 @@ import {
     Layers, 
     Plus, 
     Minus,
-    CreditCard,
-    FlipHorizontal
+    FlipHorizontal,
+    Grid,
+    ChevronLeft,
+    ArrowRight,
+    Palette,
+    CheckCircle2,
+    Eye
 } from 'lucide-vue-next';
 import { useAudioStore } from '@/stores/audioStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { getAssetUrl } from '@/utils/url';
-import FrameSelectorModal, { type FrameItem } from '@/Components/FrameSelectorModal.vue';
 import axios from 'axios';
+import { showSuccess, showError, showConfirm, showToast } from '@/utils/swal';
 
 const props = defineProps<{
     session: BoothSession;
     template: Template;
+    templates?: Template[];
 }>();
 
 const audioStore = useAudioStore();
@@ -35,13 +41,30 @@ const sessionStore = useSessionStore();
 
 // Local Reactive States
 const currentSession = ref<BoothSession>(props.session);
-const step = ref<'ready' | 'countdown' | 'capturing' | 'review' | 'composing' | 'final'>('ready');
+const currentTemplate = ref<Template>(props.template);
+
+// Step Navigation: 1 (Bentuk) | 2 (Jumlah Foto) | 3 (Template Admin) | 4 (Jepret) | 5 (Cetak)
+const currentStep = ref<1 | 2 | 3 | 4 | 5>(1);
+
+// Format Foto: 'strip' (Setengah 4R / 2x6") vs 'full' (Kertas 4R Utuh / 4x6")
+const selectedFormat = ref<'strip' | 'full'>('strip');
+
+// Jumlah Foto Terpilih di Langkah 2
+const selectedPhotoCount = ref<number>(3);
+
+// Stage pemotretan di dalam Langkah 4
+const captureStage = ref<'ready' | 'countdown' | 'capturing'>('ready');
+const isComposing = ref(false);
+
+// Timer Hitungan Mundur: 3s, 5s, 10s
+const timerDuration = ref<number>(3);
 const countdown = ref(3);
 const isCountingDown = ref(false);
+
 const currentSlotIndex = ref(1);
-const totalSlots = computed(() => props.template?.photo_count || 4);
-const templateWidth = computed(() => props.template?.width || 1200);
-const templateHeight = computed(() => props.template?.height || 1800);
+const totalSlots = computed(() => currentTemplate.value?.photo_count || selectedPhotoCount.value || 3);
+const templateWidth = computed(() => currentTemplate.value?.width || 1200);
+const templateHeight = computed(() => currentTemplate.value?.height || 1800);
 const finalPhotoTimestamp = ref(Date.now());
 
 // Map foto per slot untuk live template canvas: { 1: url, 2: url, ... }
@@ -49,46 +72,6 @@ const capturedPhotosMap = ref<Record<number, string>>({});
 const isFlashingSlot = ref<number | null>(null);
 const liveCanvasRef = ref<any>(null);
 const mirrorMode = ref(true);
-
-// Frame Overlay & Background Colors
-const showFrameModal = ref(false);
-const activeFrame = computed(() => {
-    return (currentSession.value.metadata as any)?.custom_overlay_image || currentSession.value.template?.overlay_image || null;
-});
-
-const frameColors = [
-    { name: 'Putih Bersih', hex: '#ffffff', isDark: false },
-    { name: 'Hitam Elegan', hex: '#0f172a', isDark: true },
-    { name: 'Pink Pastel', hex: '#fce7f3', isDark: false },
-    { name: 'Baby Blue', hex: '#e0f2fe', isDark: false },
-    { name: 'Butter Cream', hex: '#fef9c3', isDark: false },
-    { name: 'Sage Green', hex: '#dcfce7', isDark: false },
-    { name: 'Lilac Ungu', hex: '#f3e8ff', isDark: false },
-    { name: 'Abu Modern', hex: '#334155', isDark: true },
-];
-
-const activeBgColor = computed(() => {
-    return (currentSession.value.metadata as any)?.custom_background_color || props.template.background_color || '#ffffff';
-});
-
-// Beauty Filter Presets ala BeautyPlus
-export interface CameraFilter {
-    id: string;
-    name: string;
-    icon: string;
-    cssFilter: string;
-}
-
-const cameraFilters: CameraFilter[] = [
-    { id: 'normal', name: 'Asli', icon: '✨', cssFilter: 'none' },
-    { id: 'korean-glow', name: 'Korean Glow', icon: '🌸', cssFilter: 'brightness(1.08) contrast(0.98) saturate(1.12)' },
-    { id: 'bw-noir', name: 'B&W Klasik', icon: '🖤', cssFilter: 'grayscale(100%) contrast(1.25) brightness(1.02)' },
-    { id: 'vintage-film', name: 'Vintage 90s', icon: '🎞️', cssFilter: 'sepia(0.35) contrast(1.15) brightness(1.05) saturate(1.1)' },
-    { id: 'rosy-blush', name: 'Rosy Pink', icon: '🎀', cssFilter: 'contrast(1.06) saturate(1.25) hue-rotate(-10deg) brightness(1.04)' },
-    { id: 'cyber-cool', name: 'Cyber Cool', icon: '⚡', cssFilter: 'contrast(1.2) saturate(1.3) hue-rotate(15deg)' },
-];
-const activeFilterId = ref('normal');
-const activeFilter = computed(() => cameraFilters.find(f => f.id === activeFilterId.value) || cameraFilters[0]);
 
 // Printing & Payment Modals
 const showPrintModal = ref(false);
@@ -98,6 +81,63 @@ const isPrintComplete = ref(false);
 const printCopies = ref(1);
 const showPaymentModal = ref(false);
 
+// -----------------------------------------------------------------------------
+// FILTER TEMPLATE AKTIF DARI DATABASE (Hanya yang is_active = true)
+// -----------------------------------------------------------------------------
+const activeAdminTemplates = computed(() => {
+    const all = props.templates || [];
+    return all.filter(t => {
+        // 1. Hanya template yang diaktifkan oleh admin saja
+        if (!t.is_active) return false;
+
+        // 2. Cocokkan bentuk (Strip vs Full)
+        const isStrip = t.paper_size === 'Strip 2x6' || t.width === 600 || t.frame_style === 'strip';
+        if (selectedFormat.value === 'strip' && !isStrip) return false;
+        if (selectedFormat.value === 'full' && isStrip) return false;
+
+        // 3. Cocokkan jumlah foto
+        if (selectedPhotoCount.value && t.photo_count !== selectedPhotoCount.value) return false;
+
+        return true;
+    });
+});
+
+// Pilihan jumlah foto yang tersedia dari template aktif
+const availableCountOptions = computed(() => {
+    const all = props.templates || [];
+    const activeMatchingFormat = all.filter(t => {
+        if (!t.is_active) return false;
+        const isStrip = t.paper_size === 'Strip 2x6' || t.width === 600 || t.frame_style === 'strip';
+        return selectedFormat.value === 'strip' ? isStrip : !isStrip;
+    });
+
+    if (selectedFormat.value === 'strip') {
+        const counts = [2, 3, 4];
+        return counts.map(count => {
+            const matchingTemplates = activeMatchingFormat.filter(t => t.photo_count === count);
+            return {
+                count,
+                name: `${count} Foto`,
+                description: count === 3 ? 'Strip klasik paling populer' : (count === 4 ? 'Format 4 pose estetik Life4Cuts' : '2 pose besar & leluasa'),
+                badge: count === 3 ? 'Favorit' : (count === 4 ? 'Viral' : null),
+                templateCount: matchingTemplates.length,
+            };
+        });
+    } else {
+        const counts = [1, 2, 4, 6];
+        return counts.map(count => {
+            const matchingTemplates = activeMatchingFormat.filter(t => t.photo_count === count);
+            return {
+                count,
+                name: `${count} Foto`,
+                description: count === 4 ? 'Grid 2x2 seimbang & proporsional' : (count === 1 ? 'Single Portrait Studio' : (count === 2 ? 'Duet Atas-Bawah' : '6 Momen Seru')),
+                badge: count === 4 ? 'Favorit' : null,
+                templateCount: matchingTemplates.length,
+            };
+        });
+    }
+});
+
 function getNextAvailableSlot(): number {
     for (let i = 1; i <= totalSlots.value; i++) {
         if (!capturedPhotosMap.value[i]) return i;
@@ -106,7 +146,18 @@ function getNextAvailableSlot(): number {
 }
 
 onMounted(() => {
-    // Inisialisasi foto yang sudah ada dari database sesi
+    // Inisialisasi format awal berdasarkan template saat ini
+    if (props.template?.paper_size === 'Strip 2x6' || props.template?.frame_style === 'strip' || props.template?.width === 600) {
+        selectedFormat.value = 'strip';
+    } else {
+        selectedFormat.value = 'full';
+    }
+
+    if (props.template?.photo_count) {
+        selectedPhotoCount.value = props.template.photo_count;
+    }
+
+    // Inisialisasi foto yang sudah ada dari sesi
     const photos = currentSession.value.photos || [];
     photos.forEach((p: SessionPhoto) => {
         if (p.slot_index && p.is_accepted) {
@@ -114,27 +165,86 @@ onMounted(() => {
         }
     });
 
+    // Menentukan langkah awal berdasarkan riwayat sesi
     if (currentSession.value.final_photo_path) {
-        step.value = 'final';
-    } else if (Object.keys(capturedPhotosMap.value).length >= totalSlots.value) {
-        step.value = 'review';
-    } else {
-        step.value = 'ready';
+        currentStep.value = 5; // Cetak
+    } else if (Object.keys(capturedPhotosMap.value).length >= totalSlots.value && totalSlots.value > 0) {
+        // Foto sudah lengkap -> langsung render komposit dan ke Langkah 5 (Cetak)
+        handleProceedToCompose();
+    } else if (Object.keys(capturedPhotosMap.value).length > 0) {
+        currentStep.value = 4; // Lanjut jepret
+        captureStage.value = 'ready';
         currentSlotIndex.value = getNextAvailableSlot();
+    } else {
+        currentStep.value = 1; // Mulai dari Langkah 1: Bentuk
     }
 });
 
-// START CAPTURE SEQUENCE
+// =============================================================================
+// LANGKAH 1: BENTUK (Strip vs Full)
+// =============================================================================
+function handleSelectFormat(format: 'strip' | 'full') {
+    selectedFormat.value = format;
+    // Default jumlah foto yang pas
+    selectedPhotoCount.value = format === 'strip' ? 3 : 4;
+    currentStep.value = 2; // Lanjut ke Langkah 2: Jumlah Foto
+    audioStore.playBeep(880, 0.08, 'sine');
+    audioStore.speakInstruction(
+        format === 'strip'
+            ? 'Format strip setengah 4R dipilih. Silakan pilih jumlah foto.'
+            : 'Format full 4R utuh dipilih. Silakan pilih jumlah foto.'
+    );
+}
+
+// =============================================================================
+// LANGKAH 2: JUMLAH FOTO
+// =============================================================================
+function handleSelectCount(count: number) {
+    selectedPhotoCount.value = count;
+    currentStep.value = 3; // Lanjut ke Langkah 3: Pilih Template Admin
+    audioStore.playBeep(880, 0.08, 'sine');
+    audioStore.speakInstruction(`Pilihan ${count} foto. Silakan pilih desain template yang Anda sukai.`);
+}
+
+// =============================================================================
+// LANGKAH 3: TEMPLATE (Dibuat oleh Admin Lengkap dengan Desain, Hanya Aktif)
+// =============================================================================
+async function handleSelectTemplate(tpl: Template) {
+    currentTemplate.value = tpl;
+
+    try {
+        const res = await axios.post(`/api/session/${currentSession.value.id}/select-template`, {
+            template_id: tpl.id,
+        });
+        if (res.data.success) {
+            currentSession.value = res.data.session;
+        }
+    } catch (e) {
+        console.error('Select template error', e);
+    }
+
+    // Reset foto untuk template baru & maju ke Langkah 4: Jepret
+    capturedPhotosMap.value = {};
+    currentSlotIndex.value = 1;
+    captureStage.value = 'ready';
+    currentStep.value = 4; // Lanjut ke Langkah 4: Jepret Foto
+    audioStore.playSuccess();
+    audioStore.speakInstruction(`Template ${tpl.name} siap digunakan. Bersiap untuk foto pertama!`);
+}
+
+// =============================================================================
+// LANGKAH 4: JEPRET (Secara Live Masuk ke Posisi Foto pada Template)
+// =============================================================================
 async function startCapture(slot?: number) {
     if (isCountingDown.value) return;
 
     const targetSlot = slot ?? currentSlotIndex.value;
     currentSlotIndex.value = targetSlot;
     isCountingDown.value = true;
-    countdown.value = 3; // 3 detik per foto ala Korean Life4Cuts
-    step.value = 'countdown';
+    countdown.value = timerDuration.value;
+    captureStage.value = 'countdown';
 
-    audioStore.speakInstruction(`Foto ke-${targetSlot}. Siapkan pose Anda!`);
+    audioStore.speakInstruction(`Foto ke-${targetSlot}. Siapkan pose terbaik Anda!`);
 
     const interval = setInterval(async () => {
         countdown.value -= 1;
@@ -144,11 +254,11 @@ async function startCapture(slot?: number) {
         } else if (countdown.value === 0) {
             clearInterval(interval);
             isCountingDown.value = false;
-            step.value = 'capturing';
+            captureStage.value = 'capturing';
 
             audioStore.playSmile();
 
-            // Flash & snap
+            // Flash & snap shutter
             setTimeout(async () => {
                 audioStore.playShutter();
                 await executeCameraCapture(targetSlot);
@@ -157,7 +267,7 @@ async function startCapture(slot?: number) {
     }, 1000);
 }
 
-// EXECUTE CAMERA CAPTURE & LOCK TO SLOT
+// EXECUTE CAPTURE & AUTO ADVANCE KE SLOT BERIKUTNYA
 async function executeCameraCapture(slot: number) {
     try {
         let imageData: string | null = null;
@@ -166,7 +276,6 @@ async function executeCameraCapture(slot: number) {
         }
 
         if (imageData) {
-            // Freeze dan kunci foto di slot ini secara instan di UI
             capturedPhotosMap.value[slot] = imageData;
             isFlashingSlot.value = slot;
             setTimeout(() => {
@@ -186,19 +295,23 @@ async function executeCameraCapture(slot: number) {
         if (res.data.success) {
             currentSession.value = res.data.session;
             if (res.data.photo) {
-                // Keep local base64 or update with server asset
                 capturedPhotosMap.value[slot] = imageData || res.data.photo.thumbnail_path || res.data.photo.original_path;
             }
             audioStore.playSuccess();
 
-            if (res.data.is_complete) {
-                step.value = 'review';
-                audioStore.speakInstruction('Luar biasa! Semua foto lengkap. Periksa hasil strip foto Anda.');
+            // Cek apakah semua slot sudah terisi lengkap
+            if (res.data.is_complete || Object.keys(capturedPhotosMap.value).length >= totalSlots.value) {
+                captureStage.value = 'ready';
+                audioStore.speakInstruction('Luar biasa! Semua foto selesai diambil. Memproses hasil cetak foto Anda.');
+                // Otomatis susun template 300 DPI dan maju ke Langkah 5: Cetak!
+                setTimeout(() => {
+                    handleProceedToCompose();
+                }, 800);
             } else {
-                // Beri jeda 1.8 detik agar pengguna melihat foto terkunci di slot, lalu lanjut ke slot berikutnya
+                // Jeda 1.8 detik lalu lanjut foto slot berikutnya
                 const nextSlot = getNextAvailableSlot();
                 currentSlotIndex.value = nextSlot;
-                step.value = 'ready';
+                captureStage.value = 'ready';
                 audioStore.playBeep(784, 0.1, 'sine');
                 audioStore.speakInstruction(`Bagus! Bersiap untuk foto ke-${nextSlot}.`);
 
@@ -209,78 +322,48 @@ async function executeCameraCapture(slot: number) {
         }
     } catch (err) {
         console.error('Capture error', err);
-        alert('Gagal mengambil foto. Silakan coba lagi.');
-        step.value = 'ready';
+        showError('Gagal Mengambil Foto', 'Kamera tidak merespon. Silakan periksa atau coba lagi.');
+        captureStage.value = 'ready';
     }
 }
 
-// RETAKE SPECIFIC SLOT (Ambil Ulang Foto di Slot Tertentu)
+// Retake foto slot tertentu
 function handleRetake(slotIndex: number) {
     const s = Number(slotIndex);
     delete capturedPhotosMap.value[s];
     currentSlotIndex.value = s;
-    step.value = 'ready';
+    currentStep.value = 4;
+    captureStage.value = 'ready';
     audioStore.speakInstruction(`Mengambil ulang foto ke-${s}. Siapkan pose Anda!`);
     setTimeout(() => {
         startCapture(s);
     }, 600);
 }
 
-// RETAKE ALL PHOTOS
-function handleRestartAll() {
-    capturedPhotosMap.value = {};
-    currentSlotIndex.value = 1;
-    step.value = 'ready';
-    startCapture(1);
-}
-
-// Ganti Background Color Frame
-async function handleSelectBgColor(hex: string) {
-    try {
-        const res = await axios.post(`/api/session/${currentSession.value.id}/set-frame`, {
-            background_color: hex,
-        });
-        if (res.data.success) {
-            currentSession.value = res.data.session;
-            audioStore.playBeep(784, 0.08, 'sine');
-        }
-    } catch (e) {
-        console.error('Gagal mengganti warna background frame', e);
+// Ulangi semua foto
+async function handleRestartAll() {
+    const confirmed = await showConfirm(
+        'Ulangi Sesi Foto?',
+        'Semua foto yang telah diambil pada sesi ini akan diulang dari awal.',
+        'Ya, Ulangi Foto',
+        'Batal'
+    );
+    if (confirmed) {
+        capturedPhotosMap.value = {};
+        currentSlotIndex.value = 1;
+        currentStep.value = 4;
+        captureStage.value = 'ready';
+        startCapture(1);
     }
 }
 
-// Ganti Overlay Frame
-async function handleSelectFrame(frame: FrameItem) {
-    try {
-        const res = await axios.post(`/api/session/${currentSession.value.id}/set-frame`, {
-            frame_path: frame.path,
-        });
-        if (res.data.success) {
-            currentSession.value = res.data.session;
-            audioStore.playBeep(880, 0.1, 'sine');
-        }
-    } catch (e) {
-        alert('Gagal memilih bingkai');
-    }
-}
-
-async function handleRemoveFrame() {
-    try {
-        const res = await axios.post(`/api/session/${currentSession.value.id}/set-frame`, {
-            frame_path: null,
-        });
-        if (res.data.success) {
-            currentSession.value = res.data.session;
-        }
-    } catch (e) {
-        alert('Gagal melepas bingkai');
-    }
-}
-
-// COMPOSE FINAL PHOTO (300 DPI Rendering)
+// =============================================================================
+// LANGKAH 5: CETAK (COMPOSE 300 DPI & PRINT - TANPA PEMILIHAN BACKGROUND)
+// =============================================================================
 async function handleProceedToCompose() {
-    step.value = 'composing';
-    audioStore.speakInstruction('Sedang menyusun template dan merender resolusi tinggi 300 DPI.');
+    isComposing.value = true;
+    currentStep.value = 5; // Maju ke Langkah 5: Cetak
+    audioStore.speakInstruction('Sedang menyusun template beresolusi tinggi 300 DPI siap cetak.');
 
     try {
         const res = await axios.post(`/api/session/${currentSession.value.id}/compose`);
@@ -291,16 +374,15 @@ async function handleProceedToCompose() {
                 final_thumbnail_path: res.data.thumbnail_path,
             };
             finalPhotoTimestamp.value = Date.now();
-            step.value = 'final';
             audioStore.playSuccess();
         }
     } catch (err) {
-        alert('Gagal menyusun template.');
-        step.value = 'review';
+        showError('Gagal Menyusun Foto', 'Terjadi kesalahan saat menyusun resolusi tinggi 300 DPI. Silakan coba kembali.');
+    } finally {
+        isComposing.value = false;
     }
 }
 
-// PRINT FLOW
 async function triggerPrint() {
     if (currentSession.value.payment_status === 'unpaid' && (currentSession.value.event?.default_price || 0) > 0) {
         showPaymentModal.value = true;
@@ -330,15 +412,15 @@ async function triggerPrint() {
             isPrinting.value = false;
             isPrintComplete.value = true;
             audioStore.playPrintDone();
-            audioStore.speakInstruction('Pencetakan selesai. Silakan ambil foto Anda.');
+            audioStore.speakInstruction('Pencetakan selesai! Silakan ambil foto Anda.');
         } else {
             showPrintModal.value = false;
-            alert(res.data.message || 'Printer error');
+            showError('Printer Bermasalah', res.data.message || 'Gagal mengirim dokumen ke printer.');
         }
     } catch (err: any) {
         clearInterval(progInterval);
         showPrintModal.value = false;
-        alert('Gagal mencetak: ' + (err.response?.data?.message || 'Koneksi printer terputus'));
+        showError('Gagal Mencetak', err.response?.data?.message || 'Koneksi printer fisik terputus atau tidak terdeteksi.');
     }
 }
 
@@ -346,296 +428,658 @@ function handleDoneSession() {
     showPrintModal.value = false;
     router.visit(`/session/${currentSession.value.id}/success`);
 }
+
+// Helper untuk visual mini preview template di Langkah 3
+function getTemplateBackgroundStyle(tpl: Template) {
+    if (tpl.background_image) {
+        return `url(${getAssetUrl(tpl.background_image)}) center / cover no-repeat`;
+    }
+    const nameOrSlug = `${tpl.slug || ''} ${tpl.name || ''}`.toLowerCase();
+    if (nameOrSlug.includes('pink') || nameOrSlug.includes('beautyplus')) {
+        return 'repeating-linear-gradient(90deg, #ffcde2, #ffcde2 8px, #ffffff 8px, #ffffff 16px)';
+    }
+    if (nameOrSlug.includes('lavender') || nameOrSlug.includes('purple')) {
+        return 'repeating-linear-gradient(90deg, #f3e8ff, #f3e8ff 8px, #ffffff 8px, #ffffff 16px)';
+    }
+    if (nameOrSlug.includes('mint')) {
+        return 'repeating-linear-gradient(90deg, #dcfce7, #dcfce7 8px, #ffffff 8px, #ffffff 16px)';
+    }
+    return tpl.background_color || '#ffffff';
+}
+
+function getPhotoSlots(tpl: Template): TemplateElement[] {
+    if (tpl.elements && tpl.elements.length > 0) {
+        return tpl.elements.filter(e => e.type === 'photo_slot');
+    }
+    // Fallback slots jika elements belum di-load
+    const count = tpl.photo_count || 3;
+    const slots: TemplateElement[] = [];
+    for (let i = 1; i <= count; i++) {
+        slots.push({
+            id: i,
+            template_id: tpl.id,
+            type: 'photo_slot',
+            slot_index: i,
+            x: 8,
+            y: 5 + (i - 1) * (85 / count),
+            width: 84,
+            height: Math.floor(75 / count),
+            border_radius: 6,
+        } as TemplateElement);
+    }
+    return slots;
+}
 </script>
 
 <template>
     <KioskLayout>
-        <div class="relative flex-1 w-full h-full flex flex-col overflow-hidden p-4 sm:p-6 md:p-8">
-            <!-- ========================================================== -->
-            <!-- 1. LIVE INTERACTIVE CANVAS CAPTURE (Slot-by-Slot Realtime) -->
-            <!-- ========================================================== -->
-            <template v-if="step === 'ready' || step === 'countdown' || step === 'capturing'">
-                <div class="relative flex-1 w-full h-full flex flex-col items-center justify-between gap-4">
-                    <!-- Top Info Header -->
-                    <div class="flex items-center justify-between w-full max-w-4xl px-2">
-                        <div class="flex items-center gap-2.5">
-                            <span class="w-3 h-3 rounded-full bg-red-500 animate-ping"></span>
-                            <span class="text-xs md:text-sm font-black text-amber-300 tracking-wider uppercase">
-                                KAMERA AKTIF DI SLOT #{{ currentSlotIndex }} (DARI {{ totalSlots }} FOTO)
-                            </span>
-                        </div>
-                        <div class="text-xs text-slate-400 font-medium hidden sm:block">
-                            Template: <span class="font-bold text-white">{{ template.name }}</span>
-                        </div>
+        <div class="relative flex-1 w-full h-full flex flex-col overflow-hidden bg-[#fafafa]">
+            <!-- ========================================================================= -->
+            <!-- GLOBAL TOP STEP INDICATOR BAR                                             -->
+            <!-- ========================================================================= -->
+            <div class="w-full bg-white border-b border-slate-200 px-4 py-2.5 z-30 flex items-center justify-between shadow-xs">
+                <!-- Left: Logo / Brand -->
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-400 flex items-center justify-center text-white font-black text-xs shadow-xs">
+                        📸
+                    </div>
+                    <span class="font-black text-sm text-slate-800 tracking-tight hidden sm:inline">PHOTOBOOTH PRO</span>
+                </div>
+
+                <!-- Center: Steps Progression (1: Bentuk -> 2: Jumlah -> 3: Template -> 4: Jepret -> 5: Cetak) -->
+                <div class="flex items-center gap-1 sm:gap-2.5 text-xs font-bold">
+                    <!-- Step 1: Bentuk -->
+                    <button 
+                        @click="currentStep > 1 && (currentStep = 1)"
+                        class="flex items-center gap-1.5 px-3 py-1 rounded-full transition-all"
+                        :class="currentStep === 1 
+                            ? 'bg-pink-500 text-white shadow-xs' 
+                            : (currentStep > 1 ? 'bg-pink-50 text-pink-600 hover:bg-pink-100 cursor-pointer' : 'text-slate-400')"
+                    >
+                        <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" :class="currentStep === 1 ? 'bg-white text-pink-600 font-black' : 'bg-pink-200 text-pink-700'">1</span>
+                        <span class="hidden md:inline">Bentuk</span>
+                    </button>
+
+                    <span class="text-slate-300">›</span>
+
+                    <!-- Step 2: Jumlah Foto -->
+                    <button 
+                        @click="currentStep > 2 && (currentStep = 2)"
+                        class="flex items-center gap-1.5 px-3 py-1 rounded-full transition-all"
+                        :class="currentStep === 2 
+                            ? 'bg-pink-500 text-white shadow-xs' 
+                            : (currentStep > 2 ? 'bg-pink-50 text-pink-600 hover:bg-pink-100 cursor-pointer' : 'text-slate-400')"
+                    >
+                        <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" :class="currentStep === 2 ? 'bg-white text-pink-600 font-black' : 'bg-pink-200 text-pink-700'">2</span>
+                        <span class="hidden md:inline">Jumlah Foto</span>
+                    </button>
+
+                    <span class="text-slate-300">›</span>
+
+                    <!-- Step 3: Template -->
+                    <button 
+                        @click="currentStep > 3 && (currentStep = 3)"
+                        class="flex items-center gap-1.5 px-3 py-1 rounded-full transition-all"
+                        :class="currentStep === 3 
+                            ? 'bg-pink-500 text-white shadow-xs' 
+                            : (currentStep > 3 ? 'bg-pink-50 text-pink-600 hover:bg-pink-100 cursor-pointer' : 'text-slate-400')"
+                    >
+                        <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" :class="currentStep === 3 ? 'bg-white text-pink-600 font-black' : 'bg-pink-200 text-pink-700'">3</span>
+                        <span class="hidden md:inline">Template</span>
+                    </button>
+
+                    <span class="text-slate-300">›</span>
+
+                    <!-- Step 4: Jepret Foto -->
+                    <div 
+                        class="flex items-center gap-1.5 px-3 py-1 rounded-full transition-all"
+                        :class="currentStep === 4 
+                            ? 'bg-pink-500 text-white shadow-xs' 
+                            : (currentStep > 4 ? 'bg-pink-50 text-pink-600' : 'text-slate-400')"
+                    >
+                        <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" :class="currentStep === 4 ? 'bg-white text-pink-600 font-black' : 'bg-pink-200 text-pink-700'">4</span>
+                        <span class="hidden md:inline">Jepret</span>
                     </div>
 
-                    <!-- LIVE TEMPLATE CANVAS CONTAINER (Slot 1 active -> locked -> Slot 2 active...) -->
-                    <div class="flex-1 w-full flex items-center justify-center overflow-hidden py-1">
-                        <LiveTemplateCanvas
-                            ref="liveCanvasRef"
-                            :template="template"
-                            :currentSlotIndex="currentSlotIndex"
-                            :capturedPhotos="capturedPhotosMap"
-                            :isCountingDown="isCountingDown"
-                            :countdown="countdown"
-                            :activeFrame="activeFrame"
-                            :backgroundColor="activeBgColor"
-                            :activeFilterCss="activeFilter.cssFilter"
-                            :mirrorMode="mirrorMode"
-                            :isInteractiveReview="false"
-                            :isFlashingSlot="isFlashingSlot"
-                            @retake="handleRetake"
-                        />
+                    <span class="text-slate-300">›</span>
+
+                    <!-- Step 5: Cetak -->
+                    <div 
+                        class="flex items-center gap-1.5 px-3 py-1 rounded-full transition-all"
+                        :class="currentStep === 5 
+                            ? 'bg-pink-500 text-white shadow-xs' 
+                            : 'text-slate-400'"
+                    >
+                        <span class="w-4 h-4 rounded-full flex items-center justify-center text-[10px]" :class="currentStep === 5 ? 'bg-white text-pink-600 font-black' : 'bg-slate-200 text-slate-600'">5</span>
+                        <span class="hidden md:inline">Cetak</span>
+                    </div>
+                </div>
+
+                <!-- Right: Session Code Badge -->
+                <div class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold font-mono">
+                    {{ currentSession.session_code }}
+                </div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- LANGKAH 1: BENTUK (STRIP vs FULL)                                         -->
+            <!-- ========================================================================= -->
+            <div 
+                v-if="currentStep === 1"
+                class="flex-1 w-full h-full flex flex-col items-center justify-center p-6 md:p-10 max-w-5xl mx-auto overflow-y-auto"
+            >
+                <div class="text-center mb-8">
+                    <span class="px-3.5 py-1 rounded-full bg-pink-100 text-pink-600 text-xs font-black uppercase tracking-wider">
+                        Langkah 1 dari 5
+                    </span>
+                    <h2 class="text-3xl md:text-5xl font-black text-slate-900 mt-2">
+                        PILIH BENTUK FOTO
+                    </h2>
+                    <p class="text-sm md:text-base text-slate-500 mt-1 max-w-md mx-auto">
+                        Pilih gaya cetak foto yang Anda inginkan
+                    </p>
+                </div>
+
+                <!-- 2 Touchscreen Cards: Strip vs Full -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full max-w-3xl">
+                    <!-- CARD A: PHOTO STRIP (Setengah Kertas 4R) -->
+                    <button
+                        @click="handleSelectFormat('strip')"
+                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between"
+                        :class="selectedFormat === 'strip' 
+                            ? 'border-pink-500 ring-4 ring-pink-500/20 shadow-xl' 
+                            : 'border-slate-200 hover:border-pink-300 shadow-md'"
+                    >
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-50 text-pink-600 text-xs font-black self-start mb-4">
+                            <span>✨</span>
+                            <span>POPULER • BEAUTYPLUS & LIFE4CUTS</span>
+                        </div>
+
+                        <!-- Miniature Strip Preview Visual -->
+                        <div class="w-full h-44 bg-slate-50 rounded-2xl p-3 flex items-center justify-center mb-5 border border-slate-100 group-hover:bg-pink-50/40 transition-colors">
+                            <div class="h-full w-24 bg-white rounded-xl shadow-md border border-slate-200 p-1.5 flex flex-col justify-between">
+                                <div class="w-full h-[26%] bg-[#ffcde2] rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-[26%] bg-[#ffcde2] rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-[26%] bg-[#ffcde2] rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-2 bg-slate-200 rounded-sm"></div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-2xl font-black text-slate-900 group-hover:text-pink-600 transition-colors">
+                                Photo Strip
+                            </h3>
+                            <p class="text-xs font-bold text-pink-500 mt-0.5">
+                                Setengah Kertas 4R (2x6 Inci / 600x1800 px)
+                            </p>
+                            <p class="text-xs text-slate-500 mt-2 leading-relaxed">
+                                Format strip memanjang vertikal yang ramping. Dicetak 2 lembar berdampingan, pas untuk casing HP atau dibagi bersama teman.
+                            </p>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-700">Pilihan: 2, 3, atau 4 Foto</span>
+                            <div class="w-10 h-10 rounded-2xl bg-pink-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                <ArrowRight class="w-5 h-5 stroke-[2.5]" />
+                            </div>
+                        </div>
+                    </button>
+
+                    <!-- CARD B: FULL PHOTO (Kertas 4R Utuh) -->
+                    <button
+                        @click="handleSelectFormat('full')"
+                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between"
+                        :class="selectedFormat === 'full' 
+                            ? 'border-pink-500 ring-4 ring-pink-500/20 shadow-xl' 
+                            : 'border-slate-200 hover:border-pink-300 shadow-md'"
+                    >
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-black self-start mb-4">
+                            <span>⭐</span>
+                            <span>KLASIK STUDIO • LEGA & LUAS</span>
+                        </div>
+
+                        <!-- Miniature Full 4R Preview Visual -->
+                        <div class="w-full h-44 bg-slate-50 rounded-2xl p-3 flex items-center justify-center mb-5 border border-slate-100 group-hover:bg-amber-50/30 transition-colors">
+                            <div class="h-full w-32 bg-white rounded-xl shadow-md border border-slate-200 p-2 grid grid-cols-2 gap-1.5">
+                                <div class="w-full h-full bg-slate-200 rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-full bg-slate-200 rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-full bg-slate-200 rounded-md flex items-center justify-center text-[10px]">📸</div>
+                                <div class="w-full h-full bg-slate-200 rounded-md flex items-center justify-center text-[10px]">📸</div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-2xl font-black text-slate-900 group-hover:text-pink-600 transition-colors">
+                                Full Photo
+                            </h3>
+                            <p class="text-xs font-bold text-amber-600 mt-0.5">
+                                Kertas 4R Utuh (4x6 Inci / 1200x1800 px)
+                            </p>
+                            <p class="text-xs text-slate-500 mt-2 leading-relaxed">
+                                Satu lembar foto kartu pos penuh dengan area foto yang luas. Leluasa untuk foto keluarga, rame-rame, atau pajangan frame dinding.
+                            </p>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-700">Pilihan: 1, 2, 4, atau 6 Foto</span>
+                            <div class="w-10 h-10 rounded-2xl bg-slate-900 group-hover:bg-pink-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                <ArrowRight class="w-5 h-5 stroke-[2.5]" />
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- LANGKAH 2: JUMLAH FOTO                                                    -->
+            <!-- ========================================================================= -->
+            <div 
+                v-else-if="currentStep === 2"
+                class="flex-1 w-full h-full flex flex-col items-center justify-center p-6 md:p-10 max-w-5xl mx-auto overflow-y-auto"
+            >
+                <div class="w-full max-w-4xl flex items-center justify-between mb-6">
+                    <button
+                        @click="currentStep = 1"
+                        class="px-4 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                    >
+                        <ChevronLeft class="w-4 h-4" />
+                        <span>Ganti Bentuk</span>
+                    </button>
+
+                    <div class="text-center">
+                        <span class="px-3.5 py-1 rounded-full bg-pink-100 text-pink-600 text-xs font-black uppercase tracking-wider">
+                            Langkah 2 dari 5
+                        </span>
+                        <h2 class="text-2xl md:text-4xl font-black text-slate-900 mt-1">
+                            PILIH JUMLAH FOTO
+                        </h2>
+                        <p class="text-xs md:text-sm text-slate-500">
+                            Bentuk: <span class="font-bold text-pink-600">{{ selectedFormat === 'strip' ? 'Photo Strip (Setengah 4R)' : 'Full Photo (Kertas 4R Utuh)' }}</span>
+                        </p>
                     </div>
 
-                    <!-- BEAUTY FILTER CHIPS (Float right above bottom toolbar) -->
-                    <div class="flex items-center justify-center w-full px-2">
-                        <div class="flex items-center gap-1.5 p-1.5 rounded-2xl bg-black/70 backdrop-blur-md border border-white/15 shadow-xl overflow-x-auto max-w-full scrollbar-none">
-                            <button
-                                v-for="filter in cameraFilters"
-                                :key="filter.id"
-                                @click="activeFilterId = filter.id"
-                                class="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap"
-                                :class="activeFilterId === filter.id 
-                                    ? 'bg-gradient-to-r from-amber-400 to-amber-300 text-slate-950 shadow-md scale-105' 
-                                    : 'text-slate-300 hover:text-white hover:bg-white/10'"
+                    <div class="w-24 hidden sm:block"></div>
+                </div>
+
+                <!-- CARDS GRID FOR PHOTO COUNT -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-4xl">
+                    <button
+                        v-for="opt in availableCountOptions"
+                        :key="opt.count"
+                        @click="handleSelectCount(opt.count)"
+                        class="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-pink-500 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col items-center text-center cursor-pointer"
+                    >
+                        <!-- Badge -->
+                        <span 
+                            v-if="opt.badge" 
+                            class="px-3 py-0.5 rounded-full bg-pink-500 text-white text-[10px] font-black uppercase mb-3 shadow-xs"
+                        >
+                            {{ opt.badge }}
+                        </span>
+                        <div v-else class="h-6"></div>
+
+                        <!-- Miniature Visual Layout -->
+                        <div 
+                            class="bg-slate-50 rounded-2xl p-2 mb-4 border border-slate-100 flex items-center justify-center group-hover:bg-pink-50/40 transition-colors"
+                            :class="selectedFormat === 'strip' ? 'w-24 h-44' : 'w-32 h-44'"
+                        >
+                            <div 
+                                class="w-full h-full bg-white rounded-xl shadow-xs border border-slate-200 p-1.5"
+                                :class="selectedFormat === 'full' && opt.count >= 4 ? 'grid grid-cols-2 gap-1' : 'flex flex-col justify-between'"
                             >
-                                <span>{{ filter.icon }}</span>
-                                <span>{{ filter.name }}</span>
-                            </button>
+                                <div 
+                                    v-for="sIdx in opt.count" 
+                                    :key="sIdx"
+                                    class="w-full h-full bg-[#888d92] rounded-[3px] flex items-center justify-center text-[10px] text-white font-bold"
+                                    :style="{ height: selectedFormat === 'strip' ? `${100 / opt.count - 4}%` : '100%' }"
+                                >
+                                    {{ sIdx }}
+                                </div>
+                            </div>
                         </div>
+
+                        <h3 class="text-2xl font-black text-slate-900 group-hover:text-pink-600 transition-colors">
+                            {{ opt.name }}
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                            {{ opt.description }}
+                        </p>
+
+                        <!-- Info Template Aktif Tersedia -->
+                        <div class="mt-2 text-[11px] font-semibold text-pink-600">
+                            {{ opt.templateCount }} Desain Template Tersedia
+                        </div>
+
+                        <div class="mt-5 w-full py-2.5 rounded-xl bg-pink-50 group-hover:bg-pink-500 text-pink-600 group-hover:text-white font-black text-xs transition-colors flex items-center justify-center gap-1.5">
+                            <span>Pilih {{ opt.name }}</span>
+                            <ArrowRight class="w-3.5 h-3.5" />
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- LANGKAH 3: TEMPLATE (DIBUAT ADMIN LENGKAP DENGAN DESAIN, HANYA AKTIF)     -->
+            <!-- ========================================================================= -->
+            <div 
+                v-else-if="currentStep === 3"
+                class="flex-1 w-full h-full flex flex-col p-4 md:p-8 max-w-6xl mx-auto overflow-y-auto"
+            >
+                <!-- Top Navigation & Header -->
+                <div class="w-full flex items-center justify-between mb-6">
+                    <button
+                        @click="currentStep = 2"
+                        class="px-4 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                    >
+                        <ChevronLeft class="w-4 h-4" />
+                        <span>Ganti Jumlah Foto</span>
+                    </button>
+
+                    <div class="text-center">
+                        <span class="px-3.5 py-1 rounded-full bg-pink-100 text-pink-600 text-xs font-black uppercase tracking-wider">
+                            Langkah 3 dari 5
+                        </span>
+                        <h2 class="text-2xl md:text-4xl font-black text-slate-900 mt-1">
+                            PILIH TEMPLATE
+                        </h2>
+                        <p class="text-xs md:text-sm text-slate-500">
+                            Pilih desain template buatan admin ({{ selectedPhotoCount }} Foto • {{ selectedFormat === 'strip' ? 'Photo Strip' : 'Full 4R' }})
+                        </p>
                     </div>
 
-                    <!-- BOTTOM CONTROLS & BIG TRIGGER SHUTTER -->
-                    <div class="w-full flex items-center justify-between max-w-4xl mx-auto pt-2 border-t border-white/10">
-                        <div class="text-left">
-                            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                                Giliran Foto: Slot {{ currentSlotIndex }}
-                            </span>
-                            <span class="text-sm font-semibold text-slate-300 hidden sm:block">
-                                {{ step === 'countdown' ? 'Tahan pose & senyum...' : 'Posisi kamera ada di kotak slot aktif' }}
-                            </span>
+                    <div class="px-3 py-1.5 rounded-2xl bg-pink-50 text-pink-600 text-xs font-black border border-pink-100 hidden sm:flex items-center gap-1">
+                        <span>{{ activeAdminTemplates.length }} Template Aktif</span>
+                    </div>
+                </div>
+
+                <!-- JIKA BELUM ADA TEMPLATE AKTIF UNTUK KOMBINASI INI -->
+                <div 
+                    v-if="activeAdminTemplates.length === 0"
+                    class="my-auto text-center py-16 bg-white rounded-3xl border-2 border-dashed border-slate-200 p-8 max-w-lg mx-auto"
+                >
+                    <Layers class="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                    <h3 class="text-lg font-black text-slate-800">Belum Ada Template Aktif</h3>
+                    <p class="text-xs text-slate-500 mt-1">
+                        Belum ada template aktif buatan admin untuk {{ selectedPhotoCount }} foto format {{ selectedFormat }}.
+                    </p>
+                    <button
+                        @click="currentStep = 2"
+                        class="mt-4 px-6 py-2.5 rounded-xl bg-pink-500 text-white text-xs font-bold shadow-md hover:bg-pink-600 transition-colors"
+                    >
+                        Pilih Jumlah Foto Lain
+                    </button>
+                </div>
+
+                <!-- GRID TEMPLATE BUATAN ADMIN (HANYA YANG AKTIF) -->
+                <div 
+                    v-else
+                    class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5 pb-8"
+                >
+                    <button
+                        v-for="tpl in activeAdminTemplates"
+                        :key="tpl.id"
+                        @click="handleSelectTemplate(tpl)"
+                        class="group bg-white rounded-3xl p-4 border-2 transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl flex flex-col justify-between text-left cursor-pointer"
+                        :class="currentTemplate?.id === tpl.id 
+                            ? 'border-pink-500 ring-4 ring-pink-500/20 shadow-lg' 
+                            : 'border-slate-200 hover:border-pink-300 shadow-sm'"
+                    >
+                        <!-- MINIATURE LIVE PREVIEW OF ADMIN DESIGN (Background, Slots, Texts) -->
+                        <div class="w-full flex items-center justify-center p-2 mb-3 bg-slate-50 rounded-2xl overflow-hidden group-hover:bg-pink-50/20 transition-colors">
+                            <div 
+                                class="relative rounded-xl overflow-hidden shadow-md border border-black/10 flex flex-col justify-between p-1 select-none pointer-events-none"
+                                :style="{
+                                    aspectRatio: `${tpl.width} / ${tpl.height}`,
+                                    background: getTemplateBackgroundStyle(tpl),
+                                    height: '220px',
+                                    maxHeight: '240px',
+                                }"
+                            >
+                                <!-- Render Elements Preview (Slots) -->
+                                <div 
+                                    v-for="slotEl in getPhotoSlots(tpl)"
+                                    :key="slotEl.id"
+                                    class="absolute bg-slate-800/20 border border-black/20 flex items-center justify-center"
+                                    :style="{
+                                        left: `${slotEl.x}%`,
+                                        top: `${slotEl.y}%`,
+                                        width: `${slotEl.width}%`,
+                                        height: `${slotEl.height}%`,
+                                        borderRadius: `${slotEl.border_radius || 4}px`,
+                                    }"
+                                >
+                                    <span class="text-[8px] font-black text-slate-700">📸 {{ slotEl.slot_index }}</span>
+                                </div>
+
+                                <!-- Overlay Image Preview if set -->
+                                <img
+                                    v-if="tpl.overlay_image"
+                                    :src="getAssetUrl(tpl.overlay_image)"
+                                    alt="Overlay"
+                                    class="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
+                                />
+                            </div>
                         </div>
 
-                        <!-- SHUTTER BUTTON -->
+                        <!-- Template Info -->
+                        <div>
+                            <div class="flex items-center justify-between gap-1 mb-1">
+                                <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-black uppercase">
+                                    {{ tpl.paper_size || (selectedFormat === 'strip' ? 'Strip 2x6"' : '4R') }}
+                                </span>
+                                <span v-if="tpl.is_default" class="text-[10px] text-pink-500 font-bold">Default</span>
+                            </div>
+
+                            <h4 class="text-sm font-black text-slate-900 group-hover:text-pink-600 transition-colors line-clamp-1">
+                                {{ tpl.name }}
+                            </h4>
+                            <p class="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-tight">
+                                {{ tpl.description || 'Desain template siap cetak buatan admin.' }}
+                            </p>
+                        </div>
+
+                        <!-- Action Button -->
+                        <div class="mt-4 w-full py-2 rounded-xl bg-pink-50 group-hover:bg-pink-500 text-pink-600 group-hover:text-white font-black text-xs transition-colors flex items-center justify-center gap-1.5">
+                            <span>Gunakan Template Ini</span>
+                            <ArrowRight class="w-3.5 h-3.5" />
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- LANGKAH 4: JEPRET (SECARA LIVE MASUK KE POSISI FOTO PADA TEMPLATE)        -->
+            <!-- ========================================================================= -->
+            <div 
+                v-else-if="currentStep === 4"
+                class="relative flex-1 w-full h-full flex flex-col justify-between p-3 sm:p-5"
+            >
+                <!-- TOP BAR: BACK TO TEMPLATE, TIMER, MIRROR -->
+                <div class="w-full flex items-center justify-between max-w-5xl mx-auto z-20">
+                    <button
+                        @click="currentStep = 3"
+                        class="px-3.5 py-1.5 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                    >
+                        <ChevronLeft class="w-4 h-4" />
+                        <span>Ganti Template</span>
+                    </button>
+
+                    <!-- Center: Timer Hitungan Mundur (3s, 5s, 10s) -->
+                    <div class="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-2xl shadow-sm border border-slate-200">
+                        <span class="text-[11px] font-bold text-slate-400 mr-1 hidden sm:inline">Hitungan Mundur:</span>
                         <button
-                            v-if="step === 'ready'"
-                            @click="startCapture(currentSlotIndex)"
-                            class="px-8 md:px-12 py-4 md:py-5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:from-amber-300 hover:to-yellow-200 text-slate-950 font-black text-lg md:text-xl tracking-wider shadow-[0_0_40px_rgba(245,158,11,0.6)] flex items-center gap-3 transition-all transform active:scale-95"
+                            v-for="t in [3, 5, 10]"
+                            :key="t"
+                            @click="timerDuration = t"
+                            class="px-3.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                            :class="timerDuration === t 
+                                ? 'bg-pink-500 text-white shadow-xs' 
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'"
                         >
-                            <Camera class="w-6 h-6 stroke-[2.5]" />
-                            <span>{{ currentSlotIndex === 1 ? 'MULAI AMBIL FOTO' : `AMBIL FOTO ${currentSlotIndex}` }}</span>
+                            <span>⏱️</span>
+                            <span>{{ t }}s</span>
                         </button>
+                    </div>
 
-                        <div
-                            v-else-if="step === 'countdown'"
-                            class="px-8 py-4 rounded-full bg-amber-400/20 border border-amber-400/50 text-amber-300 font-black text-lg flex items-center gap-2"
-                        >
-                            <span>POSE! ( {{ countdown }} )</span>
+                    <!-- Right: Slot Indicator & Cermin Toggle -->
+                    <div class="flex items-center gap-2">
+                        <div class="px-3 py-1.5 rounded-2xl bg-pink-50 text-pink-600 text-xs font-black border border-pink-100 hidden sm:flex items-center gap-1">
+                            <span>Foto {{ currentSlotIndex }} dari {{ totalSlots }}</span>
                         </div>
 
-                        <!-- MIRROR TOGGLE -->
                         <button
                             @click="mirrorMode = !mirrorMode"
-                            class="py-3 px-4 rounded-2xl border transition-all text-xs font-bold flex items-center gap-2"
-                            :class="mirrorMode ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-white/10 border-white/10 text-slate-300 hover:bg-white/20'"
-                            title="Mirror Mode (Cermin)"
+                            class="px-3 py-1.5 rounded-2xl bg-white border border-slate-200 hover:border-pink-300 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                            :class="{ 'border-pink-500 text-pink-600 bg-pink-50': mirrorMode }"
                         >
                             <FlipHorizontal class="w-4 h-4" />
                             <span class="hidden sm:inline">Cermin</span>
                         </button>
                     </div>
                 </div>
-            </template>
 
-            <!-- ========================================================== -->
-            <!-- 2. PHOTO REVIEW MODE (Interactive Completed Canvas)       -->
-            <!-- ========================================================== -->
-            <template v-else-if="step === 'review'">
-                <div class="flex-1 flex flex-col justify-between max-w-5xl mx-auto w-full h-full overflow-hidden">
-                    <!-- Header -->
-                    <div class="text-center mb-2">
-                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-300 text-xs font-semibold uppercase tracking-wider mb-1">
-                            <Sparkles class="w-3.5 h-3.5" />
-                            <span>STRIP FOTO ANDA SELESAI</span>
-                        </div>
-                        <h2 class="text-2xl md:text-4xl font-black text-white tracking-tight">
-                            YOUR MEMORIES
-                        </h2>
-                        <p class="text-xs md:text-sm text-slate-400 mt-0.5">
-                            Sentuh foto jika ingin mengambil ulang, atau ganti warna bingkai di bawah.
-                        </p>
+                <!-- CENTER STUDIO: LIVE TEMPLATE CANVAS (Masuk ke Posisi Foto pada Template) -->
+                <div class="relative flex-1 w-full flex items-center justify-center my-2 overflow-hidden">
+                    <LiveTemplateCanvas
+                        ref="liveCanvasRef"
+                        :template="currentTemplate"
+                        :currentSlotIndex="currentSlotIndex"
+                        :capturedPhotos="capturedPhotosMap"
+                        :isCountingDown="isCountingDown"
+                        :countdown="countdown"
+                        :mirrorMode="mirrorMode"
+                        :isInteractiveReview="false"
+                        :isFlashingSlot="isFlashingSlot"
+                        @retake="handleRetake"
+                    />
+                </div>
+
+                <!-- BOTTOM BAR: BIG PINK SHUTTER BUTTON -->
+                <div class="w-full flex items-center justify-center max-w-5xl mx-auto pt-2 z-20">
+                    <button
+                        v-if="captureStage === 'ready'"
+                        @click="startCapture(currentSlotIndex)"
+                        class="px-12 md:px-16 py-4 rounded-full bg-gradient-to-r from-pink-500 via-rose-500 to-pink-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-lg md:text-xl tracking-wider shadow-lg shadow-pink-500/40 flex items-center gap-3 transition-all transform active:scale-95 hover:scale-105"
+                    >
+                        <Camera class="w-6 h-6 stroke-[2.5]" />
+                        <span>AMBIL FOTO KE-{{ currentSlotIndex }}</span>
+                    </button>
+
+                    <div
+                        v-else-if="captureStage === 'countdown'"
+                        class="px-10 py-4 rounded-full bg-pink-500 text-white font-black text-xl flex items-center gap-2 shadow-lg shadow-pink-500/40 animate-pulse"
+                    >
+                        <span>SENYUM! ( {{ countdown }} )</span>
                     </div>
 
-                    <!-- Interactive Live Template Canvas with all locked photos -->
-                    <div class="flex-1 w-full flex items-center justify-center overflow-hidden py-2">
-                        <LiveTemplateCanvas
-                            ref="liveCanvasRef"
-                            :template="template"
-                            :currentSlotIndex="currentSlotIndex"
-                            :capturedPhotos="capturedPhotosMap"
-                            :activeFrame="activeFrame"
-                            :backgroundColor="activeBgColor"
-                            :activeFilterCss="activeFilter.cssFilter"
-                            :mirrorMode="mirrorMode"
-                            :isInteractiveReview="true"
-                            @retake="handleRetake"
+                    <div
+                        v-else-if="captureStage === 'capturing'"
+                        class="px-10 py-4 rounded-full bg-slate-900 text-white font-black text-xl flex items-center gap-2 shadow-lg"
+                    >
+                        <span>MEMPROSES...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================= -->
+            <!-- LANGKAH 5: CETAK (FINAL 300 DPI PREVIEW & PRINT)                           -->
+            <!-- ========================================================================= -->
+            <div 
+                v-else-if="currentStep === 5"
+                class="flex-1 flex flex-col md:flex-row items-center justify-between gap-8 max-w-6xl mx-auto w-full h-full overflow-hidden p-6"
+            >
+                <!-- Left: Final 300 DPI Composite Preview Card -->
+                <div class="flex-1 h-full max-h-[78vh] flex items-center justify-center">
+                    <div 
+                        v-if="!isComposing && currentSession.final_photo_path"
+                        class="relative max-h-full rounded-3xl overflow-hidden border-2 border-slate-200 shadow-2xl bg-white group"
+                        :style="{ aspectRatio: `${templateWidth} / ${templateHeight}` }"
+                    >
+                        <img
+                            :src="getAssetUrl(currentSession.final_photo_path) + '?v=' + finalPhotoTimestamp"
+                            alt="Final Photobooth Output"
+                            class="w-full h-full object-contain"
                         />
                     </div>
 
-                    <!-- FRAME COLOR PALETTE (Pilih Warna Bingkai Ala Life4Cuts) -->
-                    <div class="py-2.5 px-4 rounded-2xl bg-black/50 border border-white/10 flex flex-wrap items-center justify-between gap-2 mb-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-white">Warna Bingkai Strip:</span>
-                            <span class="text-[10px] text-slate-400">Pilih warna border</span>
+                    <!-- Spinner saat sedang menyusun 300 DPI -->
+                    <div v-else class="flex flex-col items-center justify-center text-center p-8">
+                        <div class="w-16 h-16 rounded-full border-4 border-pink-500 border-t-transparent animate-spin mb-4"></div>
+                        <h3 class="text-xl font-black text-slate-800">Menyusun Foto Resolusi Tinggi 300 DPI...</h3>
+                        <p class="text-xs text-slate-400 mt-1">Menggabungkan foto ke template {{ currentTemplate.name }}</p>
+                    </div>
+                </div>
+
+                <!-- Right: Print Options & QR Download Panel -->
+                <div class="w-full md:w-96 rounded-3xl bg-white border border-slate-200 p-6 flex flex-col justify-between shadow-2xl">
+                    <div>
+                        <span class="text-xs font-bold text-pink-500 uppercase tracking-wider">Langkah 5: Cetak Foto</span>
+                        <h3 class="text-2xl font-black text-slate-900 mt-1">Cetak & Unduh</h3>
+                        <p class="text-xs text-slate-500 mt-1">Template: {{ currentTemplate.name }}</p>
+
+                        <!-- Number of Copies Picker -->
+                        <div class="mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                            <label class="text-xs font-semibold text-slate-700 block mb-3">Jumlah Lembar Cetak:</label>
+                            <div class="flex items-center justify-between">
+                                <button
+                                    @click="printCopies = Math.max(1, printCopies - 1)"
+                                    class="w-12 h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
+                                >
+                                    <Minus class="w-5 h-5" />
+                                </button>
+                                <span class="text-3xl font-black text-pink-600 font-mono">{{ printCopies }}</span>
+                                <button
+                                    @click="printCopies = Math.min(10, printCopies + 1)"
+                                    class="w-12 h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
+                                >
+                                    <Plus class="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div class="text-[11px] text-slate-500 text-center mt-3">
+                                Ukuran Kertas: {{ currentTemplate?.paper_size || (selectedFormat === 'strip' ? 'Strip 2x6"' : '4R') }} Glossy Premium
+                            </div>
                         </div>
 
-                        <div class="flex items-center gap-2 overflow-x-auto py-0.5">
-                            <button
-                                v-for="color in frameColors"
-                                :key="color.hex"
-                                @click="handleSelectBgColor(color.hex)"
-                                class="w-7 h-7 rounded-full border-2 transition-all flex items-center justify-center shadow-md hover:scale-115 active:scale-90"
-                                :class="activeBgColor === color.hex ? 'border-amber-400 ring-2 ring-amber-400/50 scale-110' : 'border-white/30'"
-                                :style="{ backgroundColor: color.hex }"
-                                :title="color.name"
-                            >
-                                <Check v-if="activeBgColor === color.hex" class="w-3.5 h-3.5 stroke-[3]" :class="color.isDark ? 'text-white' : 'text-slate-900'" />
-                            </button>
+                        <!-- QR Code Mobile Download Info -->
+                        <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-4">
+                            <div class="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shadow-sm border border-slate-200">
+                                <QrCode class="w-12 h-12 text-slate-900" />
+                            </div>
+                            <div class="text-xs">
+                                <p class="font-bold text-slate-900">Salinan Digital Tersedia</p>
+                                <p class="text-[11px] text-slate-500 mt-0.5">Kode: {{ currentSession.digital_code }}</p>
+                                <p class="text-[10px] text-pink-600 font-medium mt-0.5">Scan di hasil cetak untuk unduh</p>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Bottom Actions -->
-                    <div class="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+                    <!-- Action Buttons -->
+                    <div class="mt-6 space-y-2.5">
+                        <button
+                            @click="triggerPrint"
+                            class="w-full py-4 md:py-5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-base md:text-lg shadow-lg shadow-pink-500/40 flex items-center justify-center gap-3 transition-all active:scale-95"
+                        >
+                            <Printer class="w-6 h-6 stroke-[2.5]" />
+                            <span>CETAK FOTO SEKARANG</span>
+                        </button>
+
                         <button
                             @click="handleRestartAll"
-                            class="py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 text-slate-300 font-semibold text-xs flex items-center gap-2 border border-white/10 transition-all active:scale-95"
+                            class="w-full py-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 transition-all flex items-center justify-center gap-1.5"
                         >
-                            <RotateCcw class="w-4 h-4" />
-                            <span>Ulangi Semua Sesi</span>
-                        </button>
-
-                        <!-- GANTI / PILIH BINGKAI BUTTON -->
-                        <button
-                            @click="showFrameModal = true"
-                            class="py-3.5 px-5 rounded-2xl bg-gradient-to-r from-amber-500/20 to-purple-500/20 hover:from-amber-500/30 hover:to-purple-500/30 text-amber-300 font-bold text-xs flex items-center gap-2 border border-amber-400/40 shadow-lg transition-all active:scale-95"
-                        >
-                            <Sparkles class="w-4 h-4 text-amber-400" />
-                            <span>{{ activeFrame ? 'Ganti Bingkai Overlay' : '+ Bingkai Overlay' }}</span>
+                            <RotateCcw class="w-3.5 h-3.5" />
+                            <span>Foto Ulang</span>
                         </button>
 
                         <button
-                            @click="handleProceedToCompose"
-                            class="py-4 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black text-base shadow-[0_0_35px_rgba(16,185,129,0.5)] flex items-center gap-3 transition-all active:scale-95"
+                            @click="handleDoneSession"
+                            class="w-full py-2.5 rounded-2xl text-slate-400 hover:text-slate-600 font-semibold text-xs transition-all text-center"
                         >
-                            <Check class="w-5 h-5 stroke-[3]" />
-                            <span>PAKAI FOTO & CETAK</span>
+                            Lewati & Selesai
                         </button>
                     </div>
                 </div>
-            </template>
-
-            <!-- ============================================== -->
-            <!-- 3. COMPOSING RENDERING SPINNER                 -->
-            <!-- ============================================== -->
-            <template v-else-if="step === 'composing'">
-                <div class="flex-1 flex flex-col items-center justify-center text-center">
-                    <div class="relative w-32 h-32 mb-8">
-                        <div class="absolute inset-0 rounded-full border-4 border-amber-400/20"></div>
-                        <div class="absolute inset-0 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <Layers class="w-12 h-12 text-amber-400 animate-pulse" />
-                        </div>
-                    </div>
-                    <h2 class="text-3xl font-black text-white">Menyusun Strip Desain...</h2>
-                    <p class="text-sm text-slate-400 mt-2 max-w-sm">
-                        Menggabungkan foto, frame, watermark, dan QR code beresolusi 300 DPI siap cetak.
-                    </p>
-                </div>
-            </template>
-
-            <!-- ============================================== -->
-            <!-- 4. FINAL PREVIEW & PRINT / QR DOWNLOAD         -->
-            <!-- ============================================== -->
-            <template v-else-if="step === 'final'">
-                <div class="flex-1 flex flex-col md:flex-row items-center justify-between gap-8 max-w-6xl mx-auto w-full h-full overflow-hidden">
-                    <!-- Left: Final Composite Preview Card -->
-                    <div class="flex-1 h-full max-h-[78vh] flex items-center justify-center">
-                        <div 
-                            class="relative max-h-full rounded-3xl overflow-hidden border-2 border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] bg-slate-950 group"
-                            :style="{ aspectRatio: `${templateWidth} / ${templateHeight}` }"
-                        >
-                            <img
-                                :src="getAssetUrl(currentSession.final_photo_path) + '?v=' + finalPhotoTimestamp"
-                                alt="Final Photobooth Output"
-                                class="w-full h-full object-contain"
-                            />
-                        </div>
-                    </div>
-
-                    <!-- Right: Print Options & QR Download Panel -->
-                    <div class="w-full md:w-96 rounded-3xl bg-slate-900/90 border border-white/10 p-6 flex flex-col justify-between shadow-2xl">
-                        <div>
-                            <span class="text-xs font-bold text-amber-400 uppercase tracking-wider">Hasil Siap Cetak</span>
-                            <h3 class="text-2xl font-black text-white mt-1">Cetak & Unduh</h3>
-                            <p class="text-xs text-slate-400 mt-1">Dapatkan salinan fisik dan versi digital instan</p>
-
-                            <!-- Number of Copies Picker -->
-                            <div class="mt-6 p-4 rounded-2xl bg-black/40 border border-white/10">
-                                <label class="text-xs font-semibold text-slate-300 block mb-3">Jumlah Lembar Cetak:</label>
-                                <div class="flex items-center justify-between">
-                                    <button
-                                        @click="printCopies = Math.max(1, printCopies - 1)"
-                                        class="w-12 h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-lg flex items-center justify-center active:scale-90 transition-all"
-                                    >
-                                        <Minus class="w-5 h-5" />
-                                    </button>
-                                    <span class="text-3xl font-black text-amber-400 font-mono">{{ printCopies }}</span>
-                                    <button
-                                        @click="printCopies = Math.min(10, printCopies + 1)"
-                                        class="w-12 h-12 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-lg flex items-center justify-center active:scale-90 transition-all"
-                                    >
-                                        <Plus class="w-5 h-5" />
-                                    </button>
-                                </div>
-                                <div class="text-[11px] text-slate-400 text-center mt-3">
-                                    Ukuran Kertas: {{ template?.paper_size || '4R' }} Glossy Premium
-                                </div>
-                            </div>
-
-                            <!-- QR Code Mobile Download Info -->
-                            <div class="mt-4 p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-4">
-                                <div class="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shadow">
-                                    <QrCode class="w-12 h-12 text-slate-950" />
-                                </div>
-                                <div class="text-xs">
-                                    <p class="font-bold text-white">Digital Copy Tersedia</p>
-                                    <p class="text-[11px] text-slate-400 mt-0.5">Kode: {{ currentSession.digital_code }}</p>
-                                    <p class="text-[10px] text-amber-300 mt-0.5">Scan di hasil cetak untuk unduh</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Action Buttons -->
-                        <div class="mt-6 space-y-3">
-                            <button
-                                @click="triggerPrint"
-                                class="w-full py-5 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 font-black text-lg shadow-[0_0_35px_rgba(245,158,11,0.5)] flex items-center justify-center gap-3 transition-all active:scale-95"
-                            >
-                                <Printer class="w-6 h-6 stroke-[2.5]" />
-                                <span>CETAK FOTO SEKARANG</span>
-                            </button>
-
-                            <button
-                                @click="handleDoneSession"
-                                class="w-full py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-slate-300 font-semibold text-xs transition-all text-center"
-                            >
-                                Lewati & Selesai
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </template>
+            </div>
         </div>
 
         <!-- PRINT PROGRESS MODAL -->
@@ -659,14 +1103,15 @@ function handleDoneSession() {
             @close="showPaymentModal = false"
             @paid="triggerPrint"
         />
-
-        <!-- FRAME SELECTOR MODAL -->
-        <FrameSelectorModal
-            :show="showFrameModal"
-            :currentFramePath="activeFrame"
-            @close="showFrameModal = false"
-            @select="handleSelectFrame"
-            @remove="handleRemoveFrame"
-        />
     </KioskLayout>
 </template>
+
+<style scoped>
+@keyframes scaleUp {
+    0% { transform: scale(0.9); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.animate-scale-up {
+    animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+</style>

@@ -30,6 +30,12 @@ class TemplateController extends Controller
 
         return Inertia::render('Admin/Templates/Builder', [
             'template' => $template,
+            'preset' => [
+                'paper_size' => $request->input('paper_size'),
+                'photo_count' => $request->input('count') ? (int)$request->input('count') : null,
+                'name' => $request->input('name'),
+                'format' => $request->input('format'),
+            ],
         ]);
     }
 
@@ -43,16 +49,32 @@ class TemplateController extends Controller
         $photoCount = (int)$request->input('photo_count', 3);
         $elements = $request->input('elements', []);
         $overlayImage = $request->input('overlay_image');
+        $isActive = $request->has('is_active') ? $request->boolean('is_active') : true;
+
+        // Kalkulasi resolusi 300 DPI berdasarkan ukuran kertas
+        $dimMap = [
+            'Strip 2x6' => [600, 1800],
+            '4R' => [1200, 1800],
+            '5R' => [1500, 2100],
+            '6R' => [1800, 2400],
+            'A4' => [2480, 3508],
+        ];
+        $dims = $dimMap[$paperSize] ?? [1200, 1800];
+        $w = $orientation === 'portrait' ? $dims[0] : $dims[1];
+        $h = $orientation === 'portrait' ? $dims[1] : $dims[0];
 
         if ($id) {
             $template = Template::findOrFail($id);
             $template->update([
                 'name' => $name,
                 'paper_size' => $paperSize,
+                'width' => $w,
+                'height' => $h,
                 'orientation' => $orientation,
                 'background_color' => $bgColor,
                 'photo_count' => $photoCount,
                 'overlay_image' => $overlayImage,
+                'is_active' => $isActive,
             ]);
             $template->elements()->delete();
         } else {
@@ -60,11 +82,13 @@ class TemplateController extends Controller
                 'name' => $name,
                 'slug' => Str::slug($name) . '-' . rand(100, 999),
                 'paper_size' => $paperSize,
+                'width' => $w,
+                'height' => $h,
                 'orientation' => $orientation,
                 'background_color' => $bgColor,
                 'photo_count' => $photoCount,
                 'overlay_image' => $overlayImage,
-                'is_active' => true,
+                'is_active' => $isActive,
             ]);
         }
 
@@ -78,6 +102,7 @@ class TemplateController extends Controller
                 'y' => (float)($el['y'] ?? 0),
                 'width' => (float)($el['width'] ?? 100),
                 'height' => (float)($el['height'] ?? 100),
+                'rotation' => (float)($el['rotation'] ?? 0),
                 'z_index' => (int)($el['z_index'] ?? ($idx + 1)),
                 'border_width' => (int)($el['border_width'] ?? 0),
                 'border_color' => $el['border_color'] ?? null,
@@ -90,5 +115,30 @@ class TemplateController extends Controller
         }
 
         return response()->json(['success' => true, 'template' => $template->load('elements')]);
+    }
+
+    public function toggle(int $id): JsonResponse
+    {
+        $template = Template::findOrFail($id);
+        $template->is_active = !$template->is_active;
+        $template->save();
+
+        return response()->json([
+            'success' => true,
+            'is_active' => $template->is_active,
+            'message' => 'Status template berhasil diubah',
+        ]);
+    }
+
+    public function destroy(int $id): JsonResponse
+    {
+        $template = Template::findOrFail($id);
+        $template->elements()->delete();
+        $template->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Template berhasil dihapus',
+        ]);
     }
 }

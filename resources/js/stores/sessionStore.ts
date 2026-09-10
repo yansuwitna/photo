@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import axios from 'axios';
 import type { BoothSession, Template, SessionPhoto } from '@/types';
 import { useAudioStore } from './audioStore';
+import { showError } from '@/utils/swal';
 
 export const useSessionStore = defineStore('session', {
     state: () => ({
@@ -123,7 +124,7 @@ export const useSessionStore = defineStore('session', {
                 }
             } catch (err) {
                 console.error('Capture error:', err);
-                alert('Gagal mengambil foto. Silakan coba lagi.');
+                showError('Gagal Mengambil Foto', 'Kamera tidak merespon. Silakan coba lagi.');
             }
         },
 
@@ -185,12 +186,12 @@ export const useSessionStore = defineStore('session', {
                     }, 1200);
                 } else {
                     this.isPrinting = false;
-                    alert('Printer error: ' + (res.data.message || 'Gagal cetak'));
+                    showError('Printer Error', res.data.message || 'Gagal mengirim dokumen ke printer.');
                 }
             } catch (err: any) {
                 clearInterval(progressInterval);
                 this.isPrinting = false;
-                alert('Printer error: ' + (err.response?.data?.message || 'Gagal menghubungkan printer'));
+                showError('Printer Error', err.response?.data?.message || 'Gagal menghubungkan printer.');
             }
         },
 

@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { Settings, Save, Shield, HardDrive, Volume2, Monitor } from 'lucide-vue-next';
 import axios from 'axios';
+import { showSuccess, showError } from '@/utils/swal';
 
 const props = defineProps<{
     settings: any[];
@@ -19,9 +20,9 @@ async function saveSettings() {
     isSaving.value = true;
     try {
         await axios.post('/api/admin/settings', { settings: settingsForm.value });
-        alert('Pengaturan berhasil disimpan!');
+        showSuccess('Pengaturan Disimpan!', 'Semua preferensi sistem photobooth berhasil diperbarui.');
     } catch (e) {
-        alert('Gagal menyimpan pengaturan');
+        showError('Gagal Menyimpan', 'Terjadi kesalahan saat menyimpan pengaturan sistem.');
     } finally {
         isSaving.value = false;
     }

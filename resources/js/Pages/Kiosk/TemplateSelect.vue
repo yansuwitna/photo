@@ -8,6 +8,7 @@ import type { BoothSession, Template } from '@/types';
 import { Sparkles, ArrowRight, ArrowLeft, Image as ImageIcon } from 'lucide-vue-next';
 import { useAudioStore } from '@/stores/audioStore';
 import axios from 'axios';
+import { showError } from '@/utils/swal';
 
 const props = defineProps<{
     session: BoothSession;
@@ -70,7 +71,7 @@ async function handleProceed() {
         });
         router.visit(`/session/${props.session.id}/camera`);
     } catch (e) {
-        alert('Gagal memilih template');
+        showError('Gagal Memilih Template', 'Silakan pilih template lain atau coba kembali.');
     } finally {
         isSubmitting.value = false;
     }

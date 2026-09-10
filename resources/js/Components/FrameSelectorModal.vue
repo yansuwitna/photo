@@ -14,6 +14,7 @@ import {
 } from 'lucide-vue-next';
 import axios from 'axios';
 import { getAssetUrl } from '@/utils/url';
+import { showSuccess, showError, showDeleteConfirm } from '@/utils/swal';
 
 export interface FrameItem {
     id: string;
@@ -168,7 +169,8 @@ function removeFrame() {
 }
 
 async function deleteCustomFrame(frame: FrameItem) {
-    if (!confirm(`Hapus bingkai "${frame.name}" secara permanen?`)) return;
+    const confirmed = await showDeleteConfirm(frame.name, 'File bingkai overlay ini akan dihapus secara permanen.');
+    if (!confirmed) return;
     try {
         const res = await axios.post('/api/frames/delete', { path: frame.path });
         if (res.data.success) {
@@ -176,9 +178,10 @@ async function deleteCustomFrame(frame: FrameItem) {
                 emit('remove');
             }
             await fetchFrames();
+            showSuccess('Bingkai Dihapus', `Bingkai "${frame.name}" telah dihapus.`);
         }
     } catch (e) {
-        alert('Gagal menghapus bingkai');
+        showError('Gagal Menghapus Bingkai', 'Terjadi kesalahan saat menghapus bingkai dari server.');
     }
 }
 </script>

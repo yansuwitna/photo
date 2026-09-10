@@ -20,6 +20,7 @@ import DeviceStatusBadge from '@/Components/DeviceStatusBadge.vue';
 import { useDeviceStore } from '@/stores/deviceStore';
 import { getAssetUrl } from '@/utils/url';
 import axios from 'axios';
+import { showSuccess, showError, showInfo } from '@/utils/swal';
 
 const props = defineProps<{
     activeSession?: any;
@@ -65,7 +66,7 @@ async function startNewSession() {
             activeSession.value = res.data.session;
         }
     } catch (e) {
-        alert('Gagal memulai sesi dari controller');
+        showError('Gagal Memulai Sesi', 'Tidak dapat memulai sesi dari controller.');
     } finally {
         isStarting.value = false;
     }
@@ -81,7 +82,7 @@ async function triggerRemoteCapture(slot: number) {
             activeSession.value = res.data.session;
         }
     } catch (e) {
-        alert('Gagal remote capture');
+        showError('Gagal Remote Capture', 'Terjadi kesalahan saat memicu capture kamera.');
     }
 }
 
@@ -93,13 +94,13 @@ async function triggerRemotePrint() {
             copies: 1,
         });
         if (res.data.success) {
-            alert('Perintah cetak berhasil dikirim!');
+            showSuccess('Perintah Cetak Terkirim', 'Printer sedang memproses pencetakan foto.');
             await refreshData();
         } else {
-            alert('Gagal cetak: ' + res.data.message);
+            showError('Gagal Cetak', res.data.message || 'Printer mengalami kendala.');
         }
     } catch (e: any) {
-        alert('Error cetak: ' + (e.response?.data?.message || 'Koneksi terputus'));
+        showError('Error Cetak', e.response?.data?.message || 'Koneksi ke printer terputus.');
     } finally {
         isPrinting.value = false;
     }
@@ -107,12 +108,12 @@ async function triggerRemotePrint() {
 
 async function runCameraTest() {
     const res = await deviceStore.testCamera();
-    alert(res.message || 'Uji kamera selesai');
+    showInfo('Uji Kamera', res.message || 'Uji kamera selesai.');
 }
 
 async function runPrinterTest() {
     const res = await deviceStore.testPrinter();
-    alert(res.message || 'Uji printer selesai');
+    showInfo('Uji Printer', res.message || 'Uji printer selesai.');
 }
 </script>
 

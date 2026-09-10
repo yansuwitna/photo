@@ -42,7 +42,7 @@ class SessionApiController extends Controller
 
         return response()->json([
             'success' => true,
-            'session' => $session->load(['event', 'template']),
+            'session' => $session->load(['event', 'template.elements']),
         ]);
     }
 
@@ -51,6 +51,7 @@ class SessionApiController extends Controller
         $session = BoothSession::findOrFail($sessionId);
         $framePath = $request->input('frame_path');
         $bgColor = $request->input('background_color');
+        $sticker = $request->input('sticker');
 
         $metadata = $session->metadata ?? [];
         if ($request->has('frame_path')) {
@@ -69,12 +70,29 @@ class SessionApiController extends Controller
             }
         }
 
+        if ($request->has('sticker')) {
+            if ($sticker) {
+                $metadata['custom_sticker'] = $sticker;
+            } else {
+                unset($metadata['custom_sticker']);
+            }
+        }
+
+        if ($request->has('frame_theme')) {
+            $frameTheme = $request->input('frame_theme');
+            if ($frameTheme) {
+                $metadata['frame_theme'] = $frameTheme;
+            } else {
+                unset($metadata['frame_theme']);
+            }
+        }
+
         $session->update(['metadata' => $metadata]);
 
         return response()->json([
             'success' => true,
             'message' => 'Kustomisasi berhasil disimpan.',
-            'session' => $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']),
+            'session' => $session->fresh()->load(['event', 'template.elements', 'photos', 'finalPhotos']),
         ]);
     }
 

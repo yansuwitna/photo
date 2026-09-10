@@ -5,6 +5,7 @@ import KioskLayout from '@/Layouts/KioskLayout.vue';
 import { Camera, Sparkles, ArrowRight, Play } from 'lucide-vue-next';
 import { useSessionStore } from '@/stores/sessionStore';
 import { useAudioStore } from '@/stores/audioStore';
+import { showError } from '@/utils/swal';
 
 const page = usePage();
 const sessionStore = useSessionStore();
@@ -21,10 +22,10 @@ async function handleStart() {
     try {
         const res = await sessionStore.startSession(undefined, activeEvent?.id);
         if (res.success) {
-            router.visit(`/session/${res.session.id}/template`);
+            router.visit(`/session/${res.session.id}/camera`);
         }
     } catch (err) {
-        alert('Gagal memulai sesi. Periksa koneksi kamera dan sistem.');
+        showError('Gagal Memulai Sesi', 'Periksa koneksi kamera dan status server photobooth.');
     } finally {
         isStarting.value = false;
     }

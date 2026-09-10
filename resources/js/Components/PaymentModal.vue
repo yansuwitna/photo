@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { CreditCard, QrCode, Banknote, Gift, Tag, Check, X, ShieldCheck } from 'lucide-vue-next';
 import axios from 'axios';
+import { showError, showSuccess } from '@/utils/swal';
 
 const props = defineProps<{
     show: boolean;
@@ -68,10 +69,10 @@ async function confirmPayment() {
             emit('paid', res.data.payment);
             emit('close');
         } else {
-            alert(res.data.message || 'Pembayaran gagal');
+            showError('Pembayaran Gagal', res.data.message || 'Transaksi tidak dapat diselesaikan.');
         }
     } catch (err: any) {
-        alert('Gagal memproses pembayaran');
+        showError('Gagal Memproses Pembayaran', 'Terjadi kendala koneksi saat memproses pembayaran.');
     } finally {
         isProcessing.value = false;
     }

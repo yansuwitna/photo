@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { Tag, Plus, Check, X, Percent, Gift } from 'lucide-vue-next';
 import axios from 'axios';
+import { showSuccess, showError } from '@/utils/swal';
 
 const props = defineProps<{
     promos: any[];
@@ -26,9 +27,10 @@ async function savePromo() {
     try {
         await axios.post('/api/admin/promos', form.value);
         showModal.value = false;
+        await showSuccess('Promo Disimpan!', `Kode promo "${form.value.code}" siap digunakan.`);
         router.reload();
     } catch (e) {
-        alert('Gagal menyimpan promo');
+        showError('Gagal Menyimpan Promo', 'Terjadi kesalahan saat menambahkan kode promo baru.');
     }
 }
 </script>

@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import { Calendar, Plus, Check, X, MapPin, Tag, Sparkles } from 'lucide-vue-next';
 import axios from 'axios';
+import { showSuccess, showError, showToast } from '@/utils/swal';
 
 const props = defineProps<{
     events: any[];
@@ -29,9 +30,10 @@ async function saveEvent() {
     try {
         await axios.post('/api/admin/events', form.value);
         showModal.value = false;
+        await showSuccess('Event Berhasil Disimpan!', `Event "${form.value.name}" telah ditambahkan.`);
         router.reload();
     } catch (e) {
-        alert('Gagal menyimpan event');
+        showError('Gagal Menyimpan Event', 'Terjadi kesalahan saat menyimpan event baru.');
     } finally {
         isSubmitting.value = false;
     }
@@ -40,9 +42,10 @@ async function saveEvent() {
 async function activateEvent(id: number) {
     try {
         await axios.post(`/api/admin/events/${id}/activate`);
+        showToast('Event berhasil diaktifkan', 'success');
         router.reload();
     } catch (e) {
-        alert('Gagal mengaktifkan event');
+        showError('Gagal Mengaktifkan Event', 'Tidak dapat mengubah status aktif event.');
     }
 }
 </script>

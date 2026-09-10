@@ -2,6 +2,7 @@
 import { Download, Share2, Sparkles, Camera, Check } from 'lucide-vue-next';
 import type { BoothSession } from '@/types';
 import { getAssetUrl } from '@/utils/url';
+import { showToast } from '@/utils/swal';
 
 const props = defineProps<{
     session: BoothSession;
@@ -18,7 +19,7 @@ async function handleShare() {
         } catch (e) {}
     } else {
         navigator.clipboard.writeText(window.location.href);
-        alert('Tautan foto berhasil disalin ke clipboard!');
+        showToast('Tautan foto berhasil disalin ke clipboard!', 'success');
     }
 }
 </script>
