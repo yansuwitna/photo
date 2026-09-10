@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
 import type { Template, TemplateElement } from '@/types';
@@ -293,6 +293,189 @@ function rotateStep(delta: number) {
     selectedElement.value.rotation = Math.round(((current + delta) % 360));
 }
 
+// =========================================================================
+// INTERAKTIF DRAG & DROP SERTA RESIZE ELEMEN KANVAS
+// =========================================================================
+const canvasRef = ref<HTMLElement | null>(null);
+
+// Drag to Move State & Handlers
+const isDragging = ref(false);
+const activeDragIndex = ref<number | null>(null);
+let dragStartX = 0;
+let dragStartY = 0;
+let elementStartPosX = 0;
+let elementStartPosY = 0;
+let canvasRect: DOMRect | null = null;
+
+function handleDragStart(e: MouseEvent | TouchEvent, idx: number) {
+    if (e instanceof MouseEvent && e.button !== 0) return;
+    e.stopPropagation();
+    
+    selectedIndex.value = idx;
+    activeDragIndex.value = idx;
+    isDragging.value = true;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStartX = clientX;
+    dragStartY = clientY;
+    
+    const el = elements.value[idx];
+    elementStartPosX = Number(el.x) || 0;
+    elementStartPosY = Number(el.y) || 0;
+    
+    if (canvasRef.value) {
+        canvasRect = canvasRef.value.getBoundingClientRect();
+    }
+    
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchmove', handleDragMove, { passive: false });
+    window.addEventListener('touchend', handleDragEnd);
+}
+
+function handleDragMove(e: MouseEvent | TouchEvent) {
+    if (!isDragging.value || activeDragIndex.value === null || !canvasRect) return;
+    
+    if ('touches' in e) {
+        e.preventDefault();
+    }
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const deltaPxX = clientX - dragStartX;
+    const deltaPxY = clientY - dragStartY;
+    
+    const deltaPercentX = (deltaPxX / canvasRect.width) * 100;
+    const deltaPercentY = (deltaPxY / canvasRect.height) * 100;
+    
+    const el = elements.value[activeDragIndex.value];
+    if (!el) return;
+    
+    const newX = elementStartPosX + deltaPercentX;
+    const newY = elementStartPosY + deltaPercentY;
+    
+    // Batasi dalam kanvas dengan toleransi batas
+    const clampedX = Math.max(-10, Math.min(100, newX));
+    const clampedY = Math.max(-10, Math.min(100, newY));
+    
+    el.x = Math.round(clampedX * 10) / 10;
+    el.y = Math.round(clampedY * 10) / 10;
+}
+
+function handleDragEnd() {
+    isDragging.value = false;
+    activeDragIndex.value = null;
+    canvasRect = null;
+    
+    window.removeEventListener('mousemove', handleDragMove);
+    window.removeEventListener('mouseup', handleDragEnd);
+    window.removeEventListener('touchmove', handleDragMove);
+    window.removeEventListener('touchend', handleDragEnd);
+}
+
+// Resizing State & Handlers
+const isResizing = ref(false);
+let resizeStartX = 0;
+let resizeStartY = 0;
+let elementStartWidth = 0;
+let elementStartHeight = 0;
+
+function handleResizeStart(e: MouseEvent | TouchEvent, idx: number) {
+    e.stopPropagation();
+    if (e instanceof MouseEvent && e.button !== 0) return;
+    
+    selectedIndex.value = idx;
+    isResizing.value = true;
+    activeDragIndex.value = idx;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    resizeStartX = clientX;
+    resizeStartY = clientY;
+    
+    const el = elements.value[idx];
+    elementStartWidth = Number(el.width) || 10;
+    elementStartHeight = Number(el.height) || 10;
+    
+    if (canvasRef.value) {
+        canvasRect = canvasRef.value.getBoundingClientRect();
+    }
+    
+    window.addEventListener('mousemove', handleResizeMove);
+    window.addEventListener('mouseup', handleResizeEnd);
+    window.addEventListener('touchmove', handleResizeMove, { passive: false });
+    window.addEventListener('touchend', handleResizeEnd);
+}
+
+function handleResizeMove(e: MouseEvent | TouchEvent) {
+    if (!isResizing.value || activeDragIndex.value === null || !canvasRect) return;
+    
+    if ('touches' in e) {
+        e.preventDefault();
+    }
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const deltaPxX = clientX - resizeStartX;
+    const deltaPxY = clientY - resizeStartY;
+    
+    const deltaPercentX = (deltaPxX / canvasRect.width) * 100;
+    const deltaPercentY = (deltaPxY / canvasRect.height) * 100;
+    
+    const el = elements.value[activeDragIndex.value];
+    if (!el) return;
+    
+    const newWidth = Math.max(5, Math.min(100, elementStartWidth + deltaPercentX));
+    const newHeight = Math.max(5, Math.min(100, elementStartHeight + deltaPercentY));
+    
+    el.width = Math.round(newWidth * 10) / 10;
+    el.height = Math.round(newHeight * 10) / 10;
+}
+
+function handleResizeEnd() {
+    isResizing.value = false;
+    activeDragIndex.value = null;
+    canvasRect = null;
+    
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeEnd);
+    window.removeEventListener('touchmove', handleResizeMove);
+    window.removeEventListener('touchend', handleResizeEnd);
+}
+
+// Bantuan Cepat Posisi (Center & Nudge)
+function centerHorizontal() {
+    if (!selectedElement.value) return;
+    const w = Number(selectedElement.value.width) || 0;
+    selectedElement.value.x = Math.round(((100 - w) / 2) * 10) / 10;
+}
+
+function centerVertical() {
+    if (!selectedElement.value) return;
+    const h = Number(selectedElement.value.height) || 0;
+    selectedElement.value.y = Math.round(((100 - h) / 2) * 10) / 10;
+}
+
+function nudge(axis: 'x' | 'y', delta: number) {
+    if (!selectedElement.value) return;
+    const current = Number(selectedElement.value[axis]) || 0;
+    selectedElement.value[axis] = Math.round((current + delta) * 10) / 10;
+}
+
+onUnmounted(() => {
+    window.removeEventListener('mousemove', handleDragMove);
+    window.removeEventListener('mouseup', handleDragEnd);
+    window.removeEventListener('touchmove', handleDragMove);
+    window.removeEventListener('touchend', handleDragEnd);
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeEnd);
+    window.removeEventListener('touchmove', handleResizeMove);
+    window.removeEventListener('touchend', handleResizeEnd);
+});
+
 async function saveTemplate() {
     isSaving.value = true;
     try {
@@ -580,6 +763,7 @@ async function saveTemplate() {
                 <div class="col-span-6 flex items-center justify-center p-4 bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden relative">
                     <!-- The Scaled Canvas Element -->
                     <div
+                        ref="canvasRef"
                         class="relative rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.9)] overflow-hidden transition-all duration-300 select-none border border-slate-300"
                         :style="{
                             backgroundColor: backgroundColor,
@@ -587,23 +771,24 @@ async function saveTemplate() {
                             height: isStrip ? '630px' : '540px',
                         }"
                     >
-                        <!-- Render Canvas Elements with Rotation -->
+                        <!-- Render Canvas Elements with Rotation, Drag & Resize -->
                         <div
                             v-for="(el, idx) in elements"
                             :key="idx"
-                            @click.stop="selectedIndex = idx"
-                            class="absolute cursor-pointer transition-all duration-100 flex items-center justify-center"
+                            @mousedown="handleDragStart($event, idx)"
+                            @touchstart="handleDragStart($event, idx)"
+                            class="absolute cursor-grab active:cursor-grabbing transition-shadow flex items-center justify-center select-none group"
                             :class="[
                                 selectedIndex === idx
-                                    ? 'ring-2 ring-amber-400 shadow-xl z-30'
-                                    : 'hover:ring-1 hover:ring-amber-300/60'
+                                    ? 'ring-2 ring-amber-400 shadow-2xl z-30'
+                                    : 'hover:ring-1 hover:ring-amber-300/80 hover:shadow-md'
                             ]"
                             :style="{
                                 left: `${el.x}%`,
                                 top: `${el.y}%`,
                                 width: `${el.width}%`,
                                 height: `${el.height}%`,
-                                zIndex: el.z_index || 1,
+                                zIndex: selectedIndex === idx ? 40 : (el.z_index || 1),
                                 borderRadius: `${el.border_radius || 0}px`,
                                 borderWidth: `${el.border_width || 0}px`,
                                 borderColor: el.border_color || 'transparent',
@@ -612,6 +797,24 @@ async function saveTemplate() {
                                 transformOrigin: 'center center',
                             }"
                         >
+                            <!-- Live Position Floating Badge on Selected -->
+                            <div
+                                v-if="selectedIndex === idx"
+                                class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-slate-950 font-black text-[8px] px-2 py-0.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap z-50 flex items-center gap-1 leading-none"
+                            >
+                                <span>X: {{ el.x }}%</span>
+                                <span>•</span>
+                                <span>Y: {{ el.y }}%</span>
+                            </div>
+
+                            <!-- Corner Resize Handle on Selected -->
+                            <div
+                                v-if="selectedIndex === idx"
+                                @mousedown.stop="handleResizeStart($event, idx)"
+                                @touchstart.stop="handleResizeStart($event, idx)"
+                                class="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-amber-400 border-2 border-slate-950 rounded-full cursor-se-resize shadow-md z-50 hover:scale-125 transition-transform"
+                                title="Tarik sudut ini untuk mengubah lebar & tinggi"
+                            ></div>
                             <!-- Photo Slot Element -->
                             <template v-if="el.type === 'photo_slot'">
                                 <div class="w-full h-full bg-slate-200/90 flex flex-col items-center justify-center p-2 text-slate-800 text-center pointer-events-none relative overflow-hidden">
@@ -800,15 +1003,80 @@ async function saveTemplate() {
                                 </div>
                             </div>
 
-                            <!-- Position Coordinates (%) -->
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="text-slate-400 block mb-1 text-[11px]">Posisi X (%)</label>
-                                    <input type="number" v-model.number="selectedElement.x" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                            <!-- Position Coordinates (%) with Live Drag Info -->
+                            <div class="space-y-2 p-2.5 rounded-2xl bg-white/5 border border-white/10">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-slate-200 font-bold text-xs flex items-center gap-1.5">
+                                        <span>Posisi Koordinat</span>
+                                    </label>
+                                    <span class="text-[9px] text-amber-300 font-medium bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20">
+                                        Drag Langsung di Kanvas
+                                    </span>
                                 </div>
-                                <div>
-                                    <label class="text-slate-400 block mb-1 text-[11px]">Posisi Y (%)</label>
-                                    <input type="number" v-model.number="selectedElement.y" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="text-slate-400 block mb-1 text-[10px]">Posisi X (%)</label>
+                                        <input type="number" step="0.5" v-model.number="selectedElement.x" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="text-slate-400 block mb-1 text-[10px]">Posisi Y (%)</label>
+                                        <input type="number" step="0.5" v-model.number="selectedElement.y" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                                    </div>
+                                </div>
+                                <!-- Micro Nudge & Auto Center Buttons -->
+                                <div class="flex items-center justify-between pt-1 gap-1 text-[10px]">
+                                    <div class="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            @click="nudge('x', -1)"
+                                            class="w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center font-bold"
+                                            title="Geser Kiri 1%"
+                                        >
+                                            ←
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="nudge('x', 1)"
+                                            class="w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center font-bold"
+                                            title="Geser Kanan 1%"
+                                        >
+                                            →
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="nudge('y', -1)"
+                                            class="w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center font-bold"
+                                            title="Geser Atas 1%"
+                                        >
+                                            ↑
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="nudge('y', 1)"
+                                            class="w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-slate-300 flex items-center justify-center font-bold"
+                                            title="Geser Bawah 1%"
+                                        >
+                                            ↓
+                                        </button>
+                                    </div>
+                                    <div class="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            @click="centerHorizontal"
+                                            class="px-2 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 font-bold border border-amber-400/30 transition-colors text-[10px]"
+                                            title="Posisikan pas di tengah horizontal kanvas"
+                                        >
+                                            Tengah X
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="centerVertical"
+                                            class="px-2 py-1 rounded bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 font-bold border border-amber-400/30 transition-colors text-[10px]"
+                                            title="Posisikan pas di tengah vertikal kanvas"
+                                        >
+                                            Tengah Y
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -816,11 +1084,11 @@ async function saveTemplate() {
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
                                     <label class="text-slate-400 block mb-1 text-[11px]">Lebar (%)</label>
-                                    <input type="number" v-model.number="selectedElement.width" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                                    <input type="number" step="0.5" v-model.number="selectedElement.width" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
                                 </div>
                                 <div>
                                     <label class="text-slate-400 block mb-1 text-[11px]">Tinggi (%)</label>
-                                    <input type="number" v-model.number="selectedElement.height" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
+                                    <input type="number" step="0.5" v-model.number="selectedElement.height" class="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-white font-mono text-xs" />
                                 </div>
                             </div>
 

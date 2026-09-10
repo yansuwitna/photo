@@ -11,8 +11,9 @@ Dokumen ini mencatat seluruh pembaruan arsitektur, integrasi modul, perubahan lo
 4. [Pembaruan Manajemen Template Admin (7 Kategori)](#4-pembaruan-manajemen-template-admin-7-kategori)
 5. [Fitur Rotasi Slot Foto (Builder, Preview & Render 300 DPI)](#5-fitur-rotasi-slot-foto-builder-preview--render-300-dpi)
 6. [Penguncian Otomatis Ukuran Kertas & Kanvas](#6-penguncian-otomatis-ukuran-kertas--kanvas)
-7. [Matriks Detail Perubahan File](#7-matriks-detail-perubahan-file)
-8. [Panduan Pemeliharaan & Troubleshooting](#8-panduan-pemeliharaan--troubleshooting)
+7. [Fitur Drag & Drop Geser Slot & Resize Interaktif](#7-fitur-drag--drop-geser-slot--resize-interaktif)
+8. [Matriks Detail Perubahan File](#8-matriks-detail-perubahan-file)
+9. [Panduan Pemeliharaan & Troubleshooting](#9-panduan-pemeliharaan--troubleshooting)
 
 ---
 
@@ -23,6 +24,7 @@ Dokumen ini mencatat seluruh pembaruan arsitektur, integrasi modul, perubahan lo
 3. **Pemisahan Tabel Template Admin**: Memecah halaman manajemen template menjadi 7 tabel kategori terpisah berdasarkan Bentuk (Strip/Full) dan Jumlah Foto (2, 3, 4, 1, 2, 4, 6) dengan aksi cepat "+ Tambah Desain" berbasis preset dan tombol "Ubah".
 4. **Dukungan Rotasi Slot Foto**: Memungkinkan desainer memutar slot foto secara bebas (derajat arbitrer atau tombol cepat 0°, 90°, 180°, 270°, ±15°) di Builder, tampil presisi secara real-time pada kanvas kiosk, dan dicetak sempurna pada resolusi 300 DPI via PHP GD (`imagerotate`).
 5. **Penguncian Otomatis Ukuran Kertas & Kanvas**: Opsi pemilihan ukuran kertas dan kanvas dihilangkan dari antarmuka Builder. Format Strip terkunci permanen pada rasio 1:3 (600x1800 px) dengan preset 2, 3, 4 foto, dan Full 4R terkunci permanen pada rasio 2:3 (1200x1800 px) dengan preset 1, 2, 4, 6 foto. Keduanya diisolasi penuh sehingga tidak dapat saling tertukar.
+6. **Drag & Drop Geser Slot & Resize Interaktif**: Slot foto pada kanvas kini dapat digeser langsung dengan mouse/touch drag dan otomatis mengubah nilai properti `Posisi X (%)` dan `Posisi Y (%)` pada Properties Inspector secara real-time. Tersedia pula corner resize handle serta tombol micro-nudge dan auto-center horizontal/vertikal.
 
 ---
 
@@ -154,15 +156,34 @@ Berdasarkan kebutuhan operasional photobooth, ukuran kertas dan kanvas tidak lag
 
 ---
 
-## 7. Matriks Detail Perubahan File
+## 7. Fitur Drag & Drop Geser Slot & Resize Interaktif
+
+Untuk memudahkan proses perancangan desain template tanpa harus mengetik angka koordinat secara manual, kanvas kini dilengkapi dengan sistem interaksi langsung (*direct manipulation*):
+
+### 7.1. Geser Posisi dengan Drag (Drag to Move)
+- **Operasional Mouse & Touch**: Pengguna cukup mengklik dan menahan (mouse down / touch start) pada slot foto mana pun di kanvas visual, lalu menyeretnya ke posisi yang diinginkan.
+- **Sinkronisasi Real-Time**: Pergeseran langsung mengonversi delta pixel ke persentase koordinat kanvas (`el.x` dan `el.y`), yang seketika memperbarui input **Posisi X (%)** dan **Posisi Y (%)** pada Properties Inspector di sebelah kanan secara langsung.
+- **Floating Badge Koordinat**: Saat slot sedang aktif dipilih atau digeser, muncul badge mengambang di atas slot yang menampilkan posisi live: `X: ...% • Y: ...%`.
+
+### 7.2. Ubah Ukuran dengan Drag (Corner Resize Handle)
+- Setiap slot yang sedang dipilih memunculkan handle lingkaran kuning di sudut kanan bawah (`cursor-se-resize`).
+- Menarik handle ini akan mengubah nilai **Lebar (%)** dan **Tinggi (%)** slot secara interaktif dan langsung terlihat pada Properties Inspector.
+
+### 7.3. Tombol Nudge & Auto-Center pada Inspector
+- **Auto Center**: Tombol cepat **Tengah X** (menengahkan secara horizontal) dan **Tengah Y** (menengahkan secara vertikal).
+- **Micro Nudge**: Tombol panah `←`, `→`, `↑`, `↓` untuk menggeser posisi elemen sebesar 1% dengan presisi tinggi tanpa mouse drag.
+
+---
+
+## 8. Matriks Detail Perubahan File
 
 Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan beserta rincian fungsionalnya:
 
-### 7.1. File Frontend (Vue 3, Pinia, TypeScript)
+### 8.1. File Frontend (Vue 3, Pinia, TypeScript)
 
 | File | Status | Keterangan Perubahan |
 |---|---|---|
-| [`resources/js/Pages/Admin/Templates/Builder.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Builder.vue) | **Diperbarui** | Menghilangkan dropdown pilihan ukuran kertas dan kanvas, mengunci kanvas dan paperSize secara otomatis ke format Strip (600x1800) atau Full 4R (1200x1800), mengisolasi tombol preset hanya untuk format yang aktif, menambahkan indikator ikon gembok `Lock`, memperbaiki inisialisasi default slot foto (`paperSize.value`), dan kontrol rotasi foto. |
+| [`resources/js/Pages/Admin/Templates/Builder.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Builder.vue) | **Diperbarui** | Menambahkan kemampuan geser slot foto dengan drag langsung di kanvas yang sinkron live ke Properties Inspector, floating live coordinates badge, corner resize handle, tombol micro-nudge & auto-center, menghilangkan dropdown ukuran kertas, mengunci kanvas dan paperSize otomatis (Strip vs Full 4R), dan kontrol rotasi foto. |
 | [`resources/js/Pages/Admin/Templates/Index.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Admin/Templates/Index.vue) | **Diperbarui** | Merestrukturisasi halaman menjadi 7 tabel kategori template, tombol "+ Tambah Desain", tombol "Ubah", tombol cepat header `+ Desain Strip` dan `+ Desain Full 4R`, serta migrasi dialog konfirmasi ke SweetAlert2. |
 | [`resources/js/utils/swal.ts`](file:///D:/PROGRAMER/WEB/photo/resources/js/utils/swal.ts) | **Baru** | Modul helper SweetAlert2 dengan custom styling Photobooth Dark Theme (`showSuccess`, `showError`, `showConfirm`, dll). |
 | [`resources/js/Pages/Kiosk/Camera.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Kiosk/Camera.vue) | **Diperbarui** | Menghubungkan alur jepretan live langsung ke slot template aktif (`LiveTemplateCanvas.vue`), mengganti `confirm()` restart dan `alert()` error cetak dengan SweetAlert2, menonaktifkan filter wajah dan background picker manual. |
@@ -178,7 +199,7 @@ Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan bese
 | [`resources/js/Pages/Download/Index.vue`](file:///D:/PROGRAMER/WEB/photo/resources/js/Pages/Download/Index.vue) | **Diperbarui** | Mengganti toast informasi unduhan dengan `showToast()` dari SweetAlert2. |
 | [`resources/js/stores/sessionStore.ts`](file:///D:/PROGRAMER/WEB/photo/resources/js/stores/sessionStore.ts) | **Diperbarui** | Mengintegrasikan penanganan error sesi via `showError()` SweetAlert2. |
 
-### 7.2. File Backend (Laravel, PHP, Routes)
+### 8.2. File Backend (Laravel, PHP, Routes)
 
 | File | Status | Keterangan Perubahan |
 |---|---|---|
@@ -189,9 +210,9 @@ Berikut adalah daftar lengkap berkas yang telah diperbarui atau ditambahkan bese
 
 ---
 
-## 8. Panduan Pemeliharaan & Troubleshooting
+## 9. Panduan Pemeliharaan & Troubleshooting
 
-### 8.1. Menjalankan Kompilasi Aset
+### 9.1. Menjalankan Kompilasi Aset
 Setelah melakukan perubahan pada berkas Vue, CSS, atau TypeScript, jalankan kompilasi:
 ```powershell
 # Mode Development (Hot Module Replacement)
