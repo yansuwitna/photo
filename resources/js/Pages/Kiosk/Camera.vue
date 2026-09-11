@@ -1178,20 +1178,24 @@ const activeSlotDimensionLabel = computed<string>(() => {
                         </button>
 
                         <!-- Camera Status & Device Switcher Pill -->
-                        <div v-if="cameraStatus.hasStream" class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+                        <div v-if="cameraStatus.hasStream" class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold shadow-xs">
                             <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span class="hidden sm:inline">Live Viewfinder</span>
+                            <span class="hidden sm:inline">Kamera:</span>
                             <!-- Camera device picker if multiple available -->
                             <select
                                 v-if="cameraStatus.cameras.length > 1"
                                 :value="selectedCameraId || (cameraStatus.cameras[0]?.deviceId)"
                                 @change="handleSwitchCamera(($event.target as HTMLSelectElement).value)"
-                                class="text-[11px] font-bold bg-transparent text-emerald-800 border-none outline-none cursor-pointer max-w-[130px] truncate"
+                                class="text-xs font-bold bg-white/80 px-2 py-0.5 rounded-lg text-emerald-900 border border-emerald-300 outline-none cursor-pointer max-w-[150px] truncate hover:bg-white"
+                                title="Pilih Kamera Kiosk"
                             >
                                 <option v-for="cam in cameraStatus.cameras" :key="cam.deviceId" :value="cam.deviceId">
-                                    {{ cam.label || `Kamera ${cam.deviceId.slice(0, 5)}` }}
+                                    📷 {{ cam.label || `Kamera ${cam.deviceId.slice(0, 5)}` }}
                                 </option>
                             </select>
+                            <span v-else class="text-xs font-bold text-emerald-800 truncate max-w-[120px]">
+                                {{ cameraStatus.cameras[0]?.label || 'Live Viewfinder' }}
+                            </span>
                         </div>
                         <button
                             v-else

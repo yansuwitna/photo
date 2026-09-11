@@ -293,112 +293,27 @@ async function runPrinterTest() {
             </div>
         </header>
 
-        <!-- PENGATURAN KAMERA & PRINTER OPERATOR -->
-        <div class="my-3 p-3.5 rounded-2xl bg-slate-900 border border-white/10 flex flex-col gap-3 shadow-lg">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                    <!-- Lock Status Pill -->
-                    <span
-                        class="px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 border"
-                        :class="isLocked ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'"
-                    >
-                        <Lock v-if="isLocked" class="w-3.5 h-3.5" />
-                        <Unlock v-else class="w-3.5 h-3.5" />
-                        <span>{{ isLocked ? 'Perangkat Terkunci' : 'Perangkat Terbuka' }}</span>
-                    </span>
-
-                    <!-- Active Camera Pill -->
-                    <span class="px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1.5">
-                        <Camera class="w-3.5 h-3.5 text-amber-400" />
-                        <span class="text-white font-semibold">{{ deviceStore.camera.name }}</span>
-                    </span>
-
-                    <!-- Active Printer Pill -->
-                    <span class="px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1.5">
-                        <Printer class="w-3.5 h-3.5 text-sky-400" />
-                        <span class="text-white font-semibold">{{ deviceStore.printer.name }}</span>
-                        <span class="text-[10px] text-slate-400">({{ selectedPaperSize }})</span>
-                    </span>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <button
-                        @click="showDeviceSettings = !showDeviceSettings"
-                        class="py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 text-xs text-slate-300 font-semibold flex items-center gap-1.5 border border-white/10 transition-all"
-                    >
-                        <Settings class="w-3.5 h-3.5" />
-                        <span>{{ showDeviceSettings ? 'Tutup Pengaturan' : 'Ubah Kamera & Printer' }}</span>
-                        <ChevronUp v-if="showDeviceSettings" class="w-3 h-3" />
-                        <ChevronDown v-else class="w-3 h-3" />
-                    </button>
-
-                    <button
-                        @click="handleToggleLock"
-                        class="py-1.5 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow active:scale-95"
-                        :class="isLocked ? 'bg-amber-400 hover:bg-amber-300 text-slate-950' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'"
-                    >
-                        <Unlock v-if="isLocked" class="w-3.5 h-3.5" />
-                        <Lock v-else class="w-3.5 h-3.5" />
-                        <span>{{ isLocked ? 'Buka Kunci (PIN)' : 'Kunci Sekarang' }}</span>
-                    </button>
-                </div>
+        <!-- INFO OPERATOR CONTROLLER -->
+        <div class="my-3 p-3.5 rounded-2xl bg-slate-900 border border-white/10 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <!-- Info Status -->
+                <span class="px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold flex items-center gap-1.5">
+                    <Tablet class="w-3.5 h-3.5 text-amber-400" />
+                    <span>Mode Operator Tablet</span>
+                </span>
+                <span class="text-xs text-slate-400">
+                    Pemilihan kamera diatur pada layar Kiosk &bull; Pengaturan printer dan ukuran kertas diatur pada Web Print Station
+                </span>
             </div>
 
-            <!-- Expandable Drawer for Changing Camera & Printer -->
-            <div v-if="showDeviceSettings" class="pt-3 border-t border-white/10 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Pilih Kamera:</label>
-                    <select
-                        v-model="selectedCameraId"
-                        :disabled="isLocked"
-                        class="w-full px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
-                        :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
-                    >
-                        <option v-for="c in (deviceStore.cameras?.length ? deviceStore.cameras : props.cameras)" :key="c.id" :value="c.id">
-                            {{ c.name }} ({{ c.brand }})
-                        </option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Pilih Printer (Bisa Printer Biasa):</label>
-                    <select
-                        v-model="selectedPrinterId"
-                        :disabled="isLocked"
-                        class="w-full px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
-                        :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
-                    >
-                        <option v-for="p in (deviceStore.printers?.length ? deviceStore.printers : props.printers)" :key="p.id" :value="p.id">
-                            {{ p.name }} • {{ p.adapter === 'windows' ? 'Printer Biasa' : 'Dye-Sub' }}
-                        </option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-[11px] font-bold text-slate-400 uppercase mb-1">Ukuran Kertas:</label>
-                    <div class="flex gap-2">
-                        <select
-                            v-model="selectedPaperSize"
-                            :disabled="isLocked"
-                            class="flex-1 px-3 py-2 rounded-xl bg-black/50 border text-xs font-medium focus:outline-none transition-all"
-                            :class="isLocked ? 'border-white/5 text-slate-500 cursor-not-allowed' : 'border-white/10 text-white focus:border-amber-400'"
-                        >
-                            <option value="4R">4R (4x6 inci / Foto)</option>
-                            <option value="A4">A4 (Kertas Biasa)</option>
-                            <option value="Strip 2x6">Strip 2x6</option>
-                            <option value="5R">5R</option>
-                        </select>
-
-                        <button
-                            @click="handleSaveDeviceSettings"
-                            :disabled="isLocked || isSavingDevices"
-                            class="py-2 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs shadow flex items-center gap-1.5 transition-all disabled:opacity-40"
-                        >
-                            <Save class="w-3.5 h-3.5" />
-                            <span>{{ isSavingDevices ? 'Menyimpan...' : 'Simpan' }}</span>
-                        </button>
-                    </div>
-                </div>
+            <div class="flex items-center gap-2">
+                <button
+                    @click="router.visit('/print-station')"
+                    class="py-1.5 px-3 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-xs text-amber-300 font-semibold flex items-center gap-1.5 border border-amber-500/30 transition-all"
+                >
+                    <Printer class="w-3.5 h-3.5 text-amber-400" />
+                    <span>Buka Print Station</span>
+                </button>
             </div>
         </div>
 
