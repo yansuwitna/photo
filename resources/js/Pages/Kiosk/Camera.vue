@@ -109,6 +109,8 @@ const largeVideoRef = ref<HTMLVideoElement | null>(null);
 
 function handleStreamReady(stream: MediaStream) {
     liveStream.value = stream;
+    cameraStatus.value.hasStream = true;
+    cameraStatus.value.error = null;
     if (largeVideoRef.value && largeVideoRef.value.srcObject !== stream) {
         largeVideoRef.value.srcObject = stream;
         largeVideoRef.value.play().catch(() => {});
@@ -1192,11 +1194,12 @@ const activeSlotDimensionLabel = computed<string>(() => {
                             </select>
                         </div>
                         <button
-                            v-else-if="cameraStatus.error"
+                            v-else
                             @click="liveCanvasRef?.initWebcam()"
-                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-red-50 text-red-600 border border-red-200 text-xs font-bold hover:bg-red-100 transition-colors"
+                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                            title="Hubungkan Kamera"
                         >
-                            <VideoOff class="w-3.5 h-3.5" />
+                            <VideoOff class="w-3.5 h-3.5 animate-pulse" />
                             <span>Kamera Offline (Hubungkan)</span>
                         </button>
                     </div>
@@ -1288,122 +1291,127 @@ const activeSlotDimensionLabel = computed<string>(() => {
 
                 <!-- CENTER STUDIO: LIVE VIEW (DUAL / TEMPLATE / VIEWFINDER) -->
                 <div class="relative flex-1 w-full flex items-center justify-center my-1 sm:my-2 overflow-hidden">
-                    <!-- 1. DESKTOP DUAL VIEW (Large Studio Viewfinder + Live Template Canvas) -->
+                    <!-- 1. DESKTOP DUAL VIEW: Left Viewfinder (Desktop only) -->
                     <div
                         v-show="viewMode === 'dual'"
-                        class="hidden lg:flex flex-row items-center justify-center gap-6 w-full h-full max-w-6xl mx-auto"
+                        class="hidden lg:flex flex-1 h-full max-h-[72vh] items-center justify-center p-2"
                     >
-                        <!-- Left: Large Studio Viewfinder Card (Ukuran & Rasio Sesuai Slot Template) -->
-                        <div class="flex-1 h-full max-h-[72vh] flex items-center justify-center p-2">
+                        <div 
+                            class="relative bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center transition-all duration-300 mx-auto"
+                            :style="{
+                                aspectRatio: activeSlotAspectRatio,
+                                maxHeight: '72vh',
+                                maxWidth: '100%',
+                                height: 'auto',
+                                width: 'auto',
+                            }"
+                        >
+                            <video
+                                :ref="setLargeVideoRef"
+                                autoplay
+                                playsinline
+                                webkit-playsinline
+                                muted
+                                :muted="true"
+                                class="w-full h-full object-cover transition-transform duration-150"
+                                :class="{ '-scale-x-100': mirrorMode }"
+                            ></video>
+
+                            <!-- Offline / Permission Request Overlay -->
                             <div 
-                                class="relative bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center transition-all duration-300 mx-auto"
-                                :style="{
-                                    aspectRatio: activeSlotAspectRatio,
-                                    maxHeight: '72vh',
-                                    maxWidth: '100%',
-                                    height: 'auto',
-                                    width: 'auto',
-                                }"
+                                v-if="!cameraStatus.hasStream" 
+                                class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-15"
                             >
-                                <video
-                                    :ref="setLargeVideoRef"
-                                    autoplay
-                                    playsinline
-                                    webkit-playsinline
-                                    muted
-                                    :muted="true"
-                                    class="w-full h-full object-cover transition-transform duration-150"
-                                    :class="{ '-scale-x-100': mirrorMode }"
-                                ></video>
-
-                                <!-- Offline / Permission Request Overlay -->
-                                <div 
-                                    v-if="!cameraStatus.hasStream" 
-                                    class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-15"
+                                <div class="w-16 h-16 rounded-3xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-4 border border-pink-500/20">
+                                    <Camera class="w-8 h-8" />
+                                </div>
+                                <h4 class="text-white font-black text-lg mb-1">Akses Kamera Diperlukan</h4>
+                                <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                    {{ cameraStatus.error || 'Izinkan browser mengakses kamera Anda untuk memulai sesi photobooth.' }}
+                                </p>
+                                <button
+                                    @click="liveCanvasRef?.initWebcam()"
+                                    class="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-lg shadow-pink-500/30 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 >
-                                    <div class="w-16 h-16 rounded-3xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-4 border border-pink-500/20">
-                                        <Camera class="w-8 h-8" />
-                                    </div>
-                                    <h4 class="text-white font-black text-lg mb-1">Akses Kamera Diperlukan</h4>
-                                    <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
-                                        {{ cameraStatus.error || 'Izinkan browser mengakses kamera Anda untuk memulai sesi photobooth.' }}
-                                    </p>
-                                    <button
-                                        @click="liveCanvasRef?.initWebcam()"
-                                        class="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-lg shadow-pink-500/30 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                                    >
-                                        <Camera class="w-4 h-4" />
-                                        <span>Izinkan & Hubungkan Kamera</span>
-                                    </button>
-                                </div>
-
-                                <!-- Corner Brackets Overlay -->
-                                <div class="absolute inset-4 pointer-events-none z-10">
-                                    <div class="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-amber-400"></div>
-                                    <div class="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-amber-400"></div>
-                                    <div class="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-amber-400"></div>
-                                    <div class="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-amber-400"></div>
-                                </div>
-
-                                <!-- Studio Badges -->
-                                <div class="absolute top-4 left-4 z-20 flex items-center gap-2 flex-wrap">
-                                    <div class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-black flex items-center gap-1.5 shadow-md">
-                                        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
-                                        <span>LIVE STUDIO</span>
-                                    </div>
-                                    <div class="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-sm text-amber-300 text-[11px] font-black border border-amber-400/30">
-                                        Pose Foto #{{ currentSlotIndex }}
-                                    </div>
-                                    <div class="hidden sm:flex px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-slate-300 text-[10px] font-mono border border-white/10">
-                                        📐 Slot: {{ activeSlotDimensionLabel }}
-                                    </div>
-                                </div>
-
-                                <!-- Giant Countdown Overlay -->
-                                <div
-                                    v-if="isCountingDown || countdown === 0"
-                                    class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none bg-black/25 backdrop-blur-xs"
-                                >
-                                    <span
-                                        :key="countdown"
-                                        class="font-black text-amber-300 drop-shadow-[0_8px_32px_rgba(0,0,0,0.95)]"
-                                        :class="countdown === 0 ? 'text-4xl md:text-6xl text-white animate-bounce' : 'text-8xl md:text-9xl animate-scale-up font-mono'"
-                                    >
-                                        {{ countdown === 0 ? '📸 SMILE!' : countdown }}
-                                    </span>
-                                </div>
-
-                                <!-- Flash Effect -->
-                                <div
-                                    v-if="isFlashingSlot !== null"
-                                    class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
-                                ></div>
+                                    <Camera class="w-4 h-4" />
+                                    <span>Izinkan & Hubungkan Kamera</span>
+                                </button>
                             </div>
-                        </div>
 
-                        <!-- Right: Live Template Canvas (Desktop) -->
-                        <div class="w-auto h-full max-h-[72vh] flex items-center justify-center shrink-0">
-                            <LiveTemplateCanvas
-                                ref="liveCanvasRef"
-                                :template="currentTemplate"
-                                :currentSlotIndex="currentSlotIndex"
-                                :capturedPhotos="capturedPhotosMap"
-                                :isCountingDown="isCountingDown"
-                                :countdown="countdown"
-                                :mirrorMode="mirrorMode"
-                                :isInteractiveReview="false"
-                                :isFlashingSlot="isFlashingSlot"
-                                @retake="handleRetake"
-                                @stream-ready="handleStreamReady"
-                                @camera-status="handleCameraStatus"
-                            />
+                            <!-- Corner Brackets Overlay -->
+                            <div class="absolute inset-4 pointer-events-none z-10">
+                                <div class="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-amber-400"></div>
+                                <div class="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-amber-400"></div>
+                                <div class="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-amber-400"></div>
+                                <div class="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-amber-400"></div>
+                            </div>
+
+                            <!-- Studio Badges -->
+                            <div class="absolute top-4 left-4 z-20 flex items-center gap-2 flex-wrap">
+                                <div class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-black flex items-center gap-1.5 shadow-md">
+                                    <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                    <span>LIVE STUDIO</span>
+                                </div>
+                                <div class="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-sm text-amber-300 text-[11px] font-black border border-amber-400/30">
+                                    Pose Foto #{{ currentSlotIndex }}
+                                </div>
+                                <div class="hidden sm:flex px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-slate-300 text-[10px] font-mono border border-white/10">
+                                    📐 Slot: {{ activeSlotDimensionLabel }}
+                                </div>
+                            </div>
+
+                            <!-- Giant Countdown Overlay -->
+                            <div
+                                v-if="isCountingDown || countdown === 0"
+                                class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none bg-black/25 backdrop-blur-xs"
+                            >
+                                <span
+                                    :key="countdown"
+                                    class="font-black text-amber-300 drop-shadow-[0_8px_32px_rgba(0,0,0,0.95)]"
+                                    :class="countdown === 0 ? 'text-4xl md:text-6xl text-white animate-bounce' : 'text-8xl md:text-9xl animate-scale-up font-mono'"
+                                >
+                                    {{ countdown === 0 ? '📸 SMILE!' : countdown }}
+                                </span>
+                            </div>
+
+                            <!-- Flash Effect -->
+                            <div
+                                v-if="isFlashingSlot !== null"
+                                class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
+                            ></div>
                         </div>
                     </div>
 
+                    <!-- Single Persistent Live Template Canvas -->
+                    <div 
+                        class="h-full max-h-[72vh] items-center justify-center shrink-0"
+                        :class="[
+                            viewMode === 'dual' ? 'hidden lg:flex w-auto' : '',
+                            mobileTab === 'template' ? 'flex w-full' : 'hidden lg:flex'
+                        ]"
+                    >
+                        <LiveTemplateCanvas
+                            ref="liveCanvasRef"
+                            :template="currentTemplate"
+                            :currentSlotIndex="currentSlotIndex"
+                            :capturedPhotos="capturedPhotosMap"
+                            :isCountingDown="isCountingDown"
+                            :countdown="countdown"
+                            :mirrorMode="mirrorMode"
+                            :isInteractiveReview="false"
+                            :isFlashingSlot="isFlashingSlot"
+                            @retake="handleRetake"
+                            @stream-ready="handleStreamReady"
+                            @camera-status="handleCameraStatus"
+                        />
+                    </div>
+
                     <!-- 2. MOBILE ADAPTIVE VIEW (Toggles between large viewfinder & template canvas) -->
-                    <div class="flex lg:hidden w-full h-full max-h-[72vh] items-center justify-center">
+                    <div 
+                        v-show="mobileTab === 'viewfinder'" 
+                        class="flex lg:hidden w-full h-full max-h-[72vh] items-center justify-center"
+                    >
                         <div
-                            v-show="mobileTab === 'viewfinder'"
                             class="relative w-full h-full max-w-md bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center"
                         >
                             <video
@@ -1422,23 +1430,23 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                 v-if="!cameraStatus.hasStream" 
                                 class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-15"
                             >
-                                    <div class="w-14 h-14 rounded-2xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-3 border border-pink-500/20">
-                                        <Camera class="w-7 h-7" />
-                                    </div>
-                                    <h4 class="text-white font-black text-base mb-1">Akses Kamera Diperlukan</h4>
-                                    <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
-                                        {{ cameraStatus.error || 'Izinkan browser mengakses kamera smartphone / tablet Anda.' }}
-                                    </p>
-                                    <button
-                                        @click="liveCanvasRef?.initWebcam()"
-                                        class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                                    >
-                                        <Camera class="w-4 h-4" />
-                                        <span>Izinkan Kamera</span>
-                                    </button>
+                                <div class="w-14 h-14 rounded-2xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-3 border border-pink-500/20">
+                                    <Camera class="w-7 h-7" />
                                 </div>
+                                <h4 class="text-white font-black text-base mb-1">Akses Kamera Diperlukan</h4>
+                                <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                    {{ cameraStatus.error || 'Izinkan browser mengakses kamera smartphone / tablet Anda.' }}
+                                </p>
+                                <button
+                                    @click="liveCanvasRef?.initWebcam()"
+                                    class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                                >
+                                    <Camera class="w-4 h-4" />
+                                    <span>Izinkan Kamera</span>
+                                </button>
+                            </div>
 
-                                <div class="absolute inset-3 pointer-events-none z-10">
+                            <div class="absolute inset-3 pointer-events-none z-10">
                                 <div class="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-amber-400"></div>
                                 <div class="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-amber-400"></div>
                                 <div class="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-amber-400"></div>
@@ -1467,28 +1475,6 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                 v-if="isFlashingSlot !== null"
                                 class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
                             ></div>
-                        </div>
-
-                        <!-- On mobile template tab: show LiveTemplateCanvas container -->
-                        <div
-                            v-show="mobileTab === 'template'"
-                            class="w-full h-full max-h-[72vh] flex items-center justify-center"
-                        >
-                            <!-- LiveTemplateCanvas rendered here when in mobile template mode -->
-                            <LiveTemplateCanvas
-                                v-if="mobileTab === 'template'"
-                                :template="currentTemplate"
-                                :currentSlotIndex="currentSlotIndex"
-                                :capturedPhotos="capturedPhotosMap"
-                                :isCountingDown="isCountingDown"
-                                :countdown="countdown"
-                                :mirrorMode="mirrorMode"
-                                :isInteractiveReview="false"
-                                :isFlashingSlot="isFlashingSlot"
-                                @retake="handleRetake"
-                                @stream-ready="handleStreamReady"
-                                @camera-status="handleCameraStatus"
-                            />
                         </div>
                     </div>
 

@@ -363,6 +363,7 @@ async function refreshCameraList() {
 }
 
 async function initWebcam(deviceId?: string) {
+    if (isConnectingCamera.value) return;
     stopCamera();
     isConnectingCamera.value = true;
     cameraError.value = null;
@@ -539,6 +540,10 @@ function stopCamera() {
 }
 
 function runCanvasSimulation() {
+    if (animId) {
+        cancelAnimationFrame(animId);
+        animId = null;
+    }
     const canvas = simulatedCanvasRef.value;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
