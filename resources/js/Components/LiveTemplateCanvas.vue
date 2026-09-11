@@ -753,8 +753,11 @@ defineExpose({
                             autoplay
                             playsinline
                             muted
+                            :muted="true"
                             class="w-full h-full object-cover transition-transform duration-150"
                             :class="{ '-scale-x-100': mirrorMode }"
+                            @loadedmetadata="onVideoLoaded"
+                            @canplay="onVideoLoaded"
                         ></video>
 
                         <!-- Fallback Canvas if Simulated -->
@@ -766,6 +769,33 @@ defineExpose({
                             class="w-full h-full object-cover"
                             :class="{ '-scale-x-100': mirrorMode }"
                         ></canvas>
+
+                        <!-- Connecting Spinner Overlay -->
+                        <div
+                            v-if="isConnectingCamera"
+                            class="absolute inset-0 z-25 bg-black/80 backdrop-blur-xs flex flex-col items-center justify-center text-center p-3"
+                        >
+                            <div class="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin mb-1.5"></div>
+                            <span class="text-[9px] font-bold text-amber-300">Menghubungkan Kamera...</span>
+                        </div>
+
+                        <!-- Camera Error Overlay with Retry Button -->
+                        <div
+                            v-else-if="!hasActiveStream && cameraError"
+                            class="absolute inset-0 z-25 bg-black/85 backdrop-blur-xs flex flex-col items-center justify-center text-center p-2"
+                        >
+                            <div class="w-6 h-6 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mb-1 border border-red-500/30">
+                                <Camera class="w-3.5 h-3.5" />
+                            </div>
+                            <span class="text-[8px] font-bold text-red-200 leading-tight mb-1.5 max-w-[90%]">{{ cameraError }}</span>
+                            <button
+                                type="button"
+                                @click.stop="initWebcam()"
+                                class="px-2 py-0.5 rounded-md bg-amber-400 hover:bg-amber-300 text-slate-950 text-[9px] font-black shadow cursor-pointer active:scale-95"
+                            >
+                                Coba Lagi
+                            </button>
+                        </div>
 
                         <!-- Pro Viewfinder Corner Brackets -->
                         <div class="absolute inset-1.5 pointer-events-none z-10">

@@ -205,21 +205,29 @@ async function initCamera() {
     stopCameraStream();
     try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1920, min: 1280 },
-                    height: { ideal: 1080, min: 720 },
-                    facingMode: 'user',
-                },
-                audio: false,
-            });
+            const constraintTiers: MediaStreamConstraints[] = [
+                { video: { width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+                { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+                { video: true, audio: false }
+            ];
 
-            if (videoRef.value) {
-                videoRef.value.srcObject = mediaStream;
-                await videoRef.value.play();
+            let stream: MediaStream | null = null;
+            for (const constraints of constraintTiers) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    if (stream) break;
+                } catch (e) {}
             }
-            hasActiveStream.value = true;
-            return;
+
+            if (stream) {
+                mediaStream = stream;
+                if (videoRef.value) {
+                    videoRef.value.srcObject = mediaStream;
+                    await videoRef.value.play();
+                }
+                hasActiveStream.value = true;
+                return;
+            }
         }
     } catch (err) {
         console.warn('Webcam tidak tersedia, menggunakan simulasi studio photobooth.', err);

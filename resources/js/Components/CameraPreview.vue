@@ -79,19 +79,28 @@ async function initWebcamOrSimulated() {
     stopCameraStream();
     try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { 
-                    width: { ideal: 1920, min: 1280 }, 
-                    height: { ideal: 1080, min: 720 }, 
-                    facingMode: facingMode.value 
-                },
-                audio: false
-            });
-            if (videoRef.value) {
-                videoRef.value.srcObject = stream;
-                await videoRef.value.play();
-                hasActiveStream.value = true;
-                return;
+            const constraintTiers: MediaStreamConstraints[] = [
+                { video: { width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+                { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+                { video: true, audio: false }
+            ];
+
+            let activeStream: MediaStream | null = null;
+            for (const constraints of constraintTiers) {
+                try {
+                    activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    if (activeStream) break;
+                } catch (e) {}
+            }
+
+            if (activeStream) {
+                stream = activeStream;
+                if (videoRef.value) {
+                    videoRef.value.srcObject = stream;
+                    await videoRef.value.play();
+                    hasActiveStream.value = true;
+                    return;
+                }
             }
         }
     } catch (err) {

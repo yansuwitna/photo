@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import KioskLayout from '@/Layouts/KioskLayout.vue';
 import LiveTemplateCanvas from '@/Components/LiveTemplateCanvas.vue';
@@ -22,7 +22,11 @@ import {
     ArrowRight,
     Palette,
     CheckCircle2,
-    Eye
+    Eye,
+    Video,
+    VideoOff,
+    Monitor,
+    Columns
 } from 'lucide-vue-next';
 import { useAudioStore } from '@/stores/audioStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -90,6 +94,67 @@ const capturedPhotosMap = ref<Record<number, string>>({});
 const isFlashingSlot = ref<number | null>(null);
 const liveCanvasRef = ref<any>(null);
 const mirrorMode = ref(true);
+
+// Camera Live Stream & Viewfinder States
+const liveStream = ref<MediaStream | null>(null);
+const cameraStatus = ref<{ hasStream: boolean; error: string | null; cameras: MediaDeviceInfo[] }>({
+    hasStream: false,
+    error: null,
+    cameras: [],
+});
+const viewMode = ref<'dual' | 'template' | 'viewfinder'>('dual');
+const mobileTab = ref<'viewfinder' | 'template'>('viewfinder');
+const selectedCameraId = ref<string>('');
+const largeVideoRef = ref<HTMLVideoElement | null>(null);
+
+function handleStreamReady(stream: MediaStream) {
+    liveStream.value = stream;
+    if (largeVideoRef.value && largeVideoRef.value.srcObject !== stream) {
+        largeVideoRef.value.srcObject = stream;
+        largeVideoRef.value.play().catch(() => {});
+    }
+}
+
+function handleCameraStatus(status: { hasStream: boolean; error: string | null; cameras: MediaDeviceInfo[] }) {
+    cameraStatus.value = status;
+}
+
+function handleSwitchCamera(deviceId: string) {
+    selectedCameraId.value = deviceId;
+    if (liveCanvasRef.value?.switchCamera) {
+        liveCanvasRef.value.switchCamera(deviceId);
+    }
+}
+
+function setLargeVideoRef(el: any) {
+    if (el) {
+        largeVideoRef.value = el as HTMLVideoElement;
+        if (liveStream.value) {
+            if (largeVideoRef.value.srcObject !== liveStream.value) {
+                largeVideoRef.value.srcObject = liveStream.value;
+            }
+            largeVideoRef.value.play().catch(() => {});
+        }
+    }
+}
+
+watch([liveStream, largeVideoRef], ([stream, el]) => {
+    if (el && stream) {
+        if (el.srcObject !== stream) {
+            el.srcObject = stream;
+        }
+        el.play().catch(() => {});
+    }
+});
+
+function handleKeydown(e: KeyboardEvent) {
+    if (currentStep.value === 4 && captureStage.value === 'ready' && !isCountingDown.value) {
+        if (e.code === 'Space' || e.key === 'Enter') {
+            e.preventDefault();
+            startCapture(currentSlotIndex.value);
+        }
+    }
+}
 
 // Printing & Payment Modals
 const showPrintModal = ref(false);
@@ -239,6 +304,12 @@ onMounted(() => {
     } else {
         currentStep.value = 1; // Mulai dari Langkah 1: Bentuk
     }
+
+    window.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeydown);
 });
 
 // =============================================================================
@@ -1049,21 +1120,48 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
             <!-- ========================================================================= -->
             <div 
                 v-else-if="currentStep === 4"
-                class="relative flex-1 w-full h-full flex flex-col justify-between p-3 sm:p-5"
+                class="relative flex-1 w-full h-full flex flex-col justify-between p-2 sm:p-4 md:p-5 overflow-hidden"
             >
-                <!-- TOP BAR: BACK TO TEMPLATE, TIMER, MIRROR -->
-                <div class="w-full flex items-center justify-between max-w-5xl mx-auto z-20">
-                    <button
-                        @click="currentStep = 3"
-                        class="px-3.5 py-1.5 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
-                    >
-                        <ChevronLeft class="w-4 h-4" />
-                        <span>Ganti Template</span>
-                    </button>
+                <!-- TOP BAR: BACK TO TEMPLATE, CAMERA STATUS, TIMER, VIEW MODE, MIRROR -->
+                <div class="w-full flex flex-wrap items-center justify-between gap-2 max-w-6xl mx-auto z-20">
+                    <div class="flex items-center gap-2">
+                        <button
+                            @click="currentStep = 3"
+                            class="px-3.5 py-1.5 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                        >
+                            <ChevronLeft class="w-4 h-4" />
+                            <span class="hidden sm:inline">Ganti Template</span>
+                        </button>
+
+                        <!-- Camera Status & Device Switcher Pill -->
+                        <div v-if="cameraStatus.hasStream" class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span class="hidden sm:inline">Live Viewfinder</span>
+                            <!-- Camera device picker if multiple available -->
+                            <select
+                                v-if="cameraStatus.cameras.length > 1"
+                                :value="selectedCameraId || (cameraStatus.cameras[0]?.deviceId)"
+                                @change="handleSwitchCamera(($event.target as HTMLSelectElement).value)"
+                                class="text-[11px] font-bold bg-transparent text-emerald-800 border-none outline-none cursor-pointer max-w-[130px] truncate"
+                            >
+                                <option v-for="cam in cameraStatus.cameras" :key="cam.deviceId" :value="cam.deviceId">
+                                    {{ cam.label || `Kamera ${cam.deviceId.slice(0, 5)}` }}
+                                </option>
+                            </select>
+                        </div>
+                        <button
+                            v-else-if="cameraStatus.error"
+                            @click="liveCanvasRef?.initWebcam()"
+                            class="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-red-50 text-red-600 border border-red-200 text-xs font-bold hover:bg-red-100 transition-colors"
+                        >
+                            <VideoOff class="w-3.5 h-3.5" />
+                            <span>Kamera Offline (Hubungkan)</span>
+                        </button>
+                    </div>
 
                     <!-- Center: Timer Hitungan Mundur (3s, 5s, 10s) -->
-                    <div class="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-2xl shadow-sm border border-slate-200">
-                        <span class="text-[11px] font-bold text-slate-400 mr-1 hidden sm:inline">Hitungan Mundur:</span>
+                    <div class="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-2xl shadow-xs border border-slate-200">
+                        <span class="text-[11px] font-bold text-slate-400 mr-1 hidden sm:inline">Timer:</span>
                         <button
                             v-for="t in [3, 5, 10]"
                             :key="t"
@@ -1078,9 +1176,40 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         </button>
                     </div>
 
-                    <!-- Right: Slot Indicator & Cermin Toggle -->
+                    <!-- Right: View Mode Toggle, Slot Indicator & Cermin Toggle -->
                     <div class="flex items-center gap-2">
-                        <div class="px-3 py-1.5 rounded-2xl bg-pink-50 text-pink-600 text-xs font-black border border-pink-100 hidden sm:flex items-center gap-1">
+                        <!-- View Mode Toggle (Desktop only) -->
+                        <div class="hidden lg:flex items-center bg-white p-1 rounded-2xl border border-slate-200 shadow-xs">
+                            <button
+                                @click="viewMode = 'dual'"
+                                class="px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+                                :class="viewMode === 'dual' ? 'bg-pink-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'"
+                                title="Mode Studio Ganda: Viewfinder Kamera Besar + Strip Template"
+                            >
+                                <Columns class="w-3.5 h-3.5" />
+                                <span>Ganda</span>
+                            </button>
+                            <button
+                                @click="viewMode = 'template'"
+                                class="px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+                                :class="viewMode === 'template' ? 'bg-pink-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'"
+                                title="Mode Fokus Template"
+                            >
+                                <Layers class="w-3.5 h-3.5" />
+                                <span>Template</span>
+                            </button>
+                            <button
+                                @click="viewMode = 'viewfinder'"
+                                class="px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+                                :class="viewMode === 'viewfinder' ? 'bg-pink-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'"
+                                title="Mode Viewfinder Besar Saja"
+                            >
+                                <Monitor class="w-3.5 h-3.5" />
+                                <span>Kamera</span>
+                            </button>
+                        </div>
+
+                        <div class="px-3 py-1.5 rounded-2xl bg-pink-50 text-pink-600 text-xs font-black border border-pink-100 flex items-center gap-1">
                             <span>Foto {{ currentSlotIndex }} dari {{ totalSlots }}</span>
                         </div>
 
@@ -1095,24 +1224,223 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                     </div>
                 </div>
 
-                <!-- CENTER STUDIO: LIVE TEMPLATE CANVAS (Masuk ke Posisi Foto pada Template) -->
-                <div class="relative flex-1 w-full flex items-center justify-center my-2 overflow-hidden">
-                    <LiveTemplateCanvas
-                        ref="liveCanvasRef"
-                        :template="currentTemplate"
-                        :currentSlotIndex="currentSlotIndex"
-                        :capturedPhotos="capturedPhotosMap"
-                        :isCountingDown="isCountingDown"
-                        :countdown="countdown"
-                        :mirrorMode="mirrorMode"
-                        :isInteractiveReview="false"
-                        :isFlashingSlot="isFlashingSlot"
-                        @retake="handleRetake"
-                    />
+                <!-- MOBILE TAB SWITCHER (Handphone / Layar Kecil) -->
+                <div class="flex lg:hidden items-center justify-center gap-2 my-1 z-20">
+                    <button
+                        @click="mobileTab = 'viewfinder'"
+                        class="px-4 py-1.5 rounded-full text-xs font-black transition-all flex items-center gap-1.5"
+                        :class="mobileTab === 'viewfinder' ? 'bg-pink-500 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
+                    >
+                        <Camera class="w-3.5 h-3.5" />
+                        <span>Kamera Studio</span>
+                    </button>
+                    <button
+                        @click="mobileTab = 'template'"
+                        class="px-4 py-1.5 rounded-full text-xs font-black transition-all flex items-center gap-1.5"
+                        :class="mobileTab === 'template' ? 'bg-pink-500 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-200'"
+                    >
+                        <Layers class="w-3.5 h-3.5" />
+                        <span>Template ({{ Object.keys(capturedPhotosMap).length }}/{{ totalSlots }})</span>
+                    </button>
                 </div>
 
-                <!-- BOTTOM BAR: BIG PINK SHUTTER BUTTON -->
-                <div class="w-full flex items-center justify-center max-w-5xl mx-auto pt-2 z-20">
+                <!-- CENTER STUDIO: LIVE VIEW (DUAL / TEMPLATE / VIEWFINDER) -->
+                <div class="relative flex-1 w-full flex items-center justify-center my-1 sm:my-2 overflow-hidden">
+                    <!-- 1. DESKTOP DUAL VIEW (Large Studio Viewfinder + Live Template Canvas) -->
+                    <div
+                        v-show="viewMode === 'dual'"
+                        class="hidden lg:flex flex-row items-center justify-center gap-6 w-full h-full max-w-6xl mx-auto"
+                    >
+                        <!-- Left: Large Studio Viewfinder Card -->
+                        <div class="flex-1 h-full max-h-[72vh] flex items-center justify-center">
+                            <div class="relative w-full h-full max-w-2xl bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center">
+                                <video
+                                    :ref="setLargeVideoRef"
+                                    autoplay
+                                    playsinline
+                                    muted
+                                    :muted="true"
+                                    class="w-full h-full object-cover transition-transform duration-150"
+                                    :class="{ '-scale-x-100': mirrorMode }"
+                                ></video>
+
+                                <!-- Corner Brackets Overlay -->
+                                <div class="absolute inset-4 pointer-events-none z-10">
+                                    <div class="absolute top-0 left-0 w-6 h-6 border-t-3 border-l-3 border-amber-400"></div>
+                                    <div class="absolute top-0 right-0 w-6 h-6 border-t-3 border-r-3 border-amber-400"></div>
+                                    <div class="absolute bottom-0 left-0 w-6 h-6 border-b-3 border-l-3 border-amber-400"></div>
+                                    <div class="absolute bottom-0 right-0 w-6 h-6 border-b-3 border-r-3 border-amber-400"></div>
+                                </div>
+
+                                <!-- Studio Badges -->
+                                <div class="absolute top-4 left-4 z-20 flex items-center gap-2">
+                                    <div class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-black flex items-center gap-1.5 shadow-md">
+                                        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                        <span>LIVE STUDIO</span>
+                                    </div>
+                                    <div class="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-sm text-amber-300 text-[11px] font-black border border-amber-400/30">
+                                        Pose Foto #{{ currentSlotIndex }}
+                                    </div>
+                                </div>
+
+                                <!-- Giant Countdown Overlay -->
+                                <div
+                                    v-if="isCountingDown || countdown === 0"
+                                    class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none bg-black/25 backdrop-blur-xs"
+                                >
+                                    <span
+                                        :key="countdown"
+                                        class="font-black text-amber-300 drop-shadow-[0_8px_32px_rgba(0,0,0,0.95)]"
+                                        :class="countdown === 0 ? 'text-4xl md:text-6xl text-white animate-bounce' : 'text-8xl md:text-9xl animate-scale-up font-mono'"
+                                    >
+                                        {{ countdown === 0 ? '📸 SMILE!' : countdown }}
+                                    </span>
+                                </div>
+
+                                <!-- Flash Effect -->
+                                <div
+                                    v-if="isFlashingSlot !== null"
+                                    class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <!-- Right: Live Template Canvas (Keeps stream continuous) -->
+                        <div class="w-auto h-full max-h-[72vh] flex items-center justify-center shrink-0">
+                            <LiveTemplateCanvas
+                                ref="liveCanvasRef"
+                                :template="currentTemplate"
+                                :currentSlotIndex="currentSlotIndex"
+                                :capturedPhotos="capturedPhotosMap"
+                                :isCountingDown="isCountingDown"
+                                :countdown="countdown"
+                                :mirrorMode="mirrorMode"
+                                :isInteractiveReview="false"
+                                :isFlashingSlot="isFlashingSlot"
+                                @retake="handleRetake"
+                                @stream-ready="handleStreamReady"
+                                @camera-status="handleCameraStatus"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- 2. MOBILE ADAPTIVE VIEW (Toggles between large viewfinder & template canvas) -->
+                    <div class="flex lg:hidden w-full h-full max-h-[72vh] items-center justify-center">
+                        <div
+                            v-show="mobileTab === 'viewfinder'"
+                            class="relative w-full h-full max-w-md bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center"
+                        >
+                            <video
+                                :ref="setLargeVideoRef"
+                                autoplay
+                                playsinline
+                                muted
+                                :muted="true"
+                                class="w-full h-full object-cover transition-transform duration-150"
+                                :class="{ '-scale-x-100': mirrorMode }"
+                            ></video>
+
+                            <div class="absolute inset-3 pointer-events-none z-10">
+                                <div class="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-amber-400"></div>
+                                <div class="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-amber-400"></div>
+                                <div class="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-amber-400"></div>
+                                <div class="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-amber-400"></div>
+                            </div>
+
+                            <div class="absolute top-3 left-3 z-20 px-2 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-black flex items-center gap-1 shadow">
+                                <span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                                <span>LIVE</span>
+                            </div>
+
+                            <div
+                                v-if="isCountingDown || countdown === 0"
+                                class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none bg-black/25"
+                            >
+                                <span
+                                    :key="countdown"
+                                    class="font-black text-amber-300 drop-shadow-[0_6px_24px_rgba(0,0,0,0.95)]"
+                                    :class="countdown === 0 ? 'text-3xl text-white animate-bounce' : 'text-7xl animate-scale-up font-mono'"
+                                >
+                                    {{ countdown === 0 ? '📸 SMILE!' : countdown }}
+                                </span>
+                            </div>
+
+                            <div
+                                v-if="isFlashingSlot !== null"
+                                class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
+                            ></div>
+                        </div>
+
+                        <!-- On mobile template tab: show LiveTemplateCanvas container -->
+                        <div
+                            v-show="mobileTab === 'template'"
+                            class="w-full h-full max-h-[72vh] flex items-center justify-center"
+                        >
+                            <!-- LiveTemplateCanvas is also placed in the DOM to keep stream active -->
+                        </div>
+                    </div>
+
+                    <!-- 3. TEMPLATE ONLY MODE -->
+                    <div
+                        v-show="viewMode === 'template'"
+                        class="hidden lg:flex w-full h-full max-h-[72vh] items-center justify-center"
+                    >
+                        <!-- Shown when user explicitly picks Template Mode on desktop -->
+                    </div>
+
+                    <!-- 4. VIEWFINDER ONLY MODE -->
+                    <div
+                        v-show="viewMode === 'viewfinder'"
+                        class="hidden lg:flex w-full h-full max-h-[72vh] items-center justify-center max-w-3xl"
+                    >
+                        <div class="relative w-full h-full bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center">
+                            <video
+                                :ref="setLargeVideoRef"
+                                autoplay
+                                playsinline
+                                muted
+                                :muted="true"
+                                class="w-full h-full object-cover transition-transform duration-150"
+                                :class="{ '-scale-x-100': mirrorMode }"
+                            ></video>
+
+                            <div class="absolute inset-4 pointer-events-none z-10">
+                                <div class="absolute top-0 left-0 w-8 h-8 border-t-3 border-l-3 border-amber-400"></div>
+                                <div class="absolute top-0 right-0 w-8 h-8 border-t-3 border-r-3 border-amber-400"></div>
+                                <div class="absolute bottom-0 left-0 w-8 h-8 border-b-3 border-l-3 border-amber-400"></div>
+                                <div class="absolute bottom-0 right-0 w-8 h-8 border-b-3 border-r-3 border-amber-400"></div>
+                            </div>
+
+                            <div class="absolute top-4 left-4 z-20 flex items-center gap-2">
+                                <div class="px-3 py-1 rounded-full bg-red-600 text-white text-xs font-black flex items-center gap-1.5 shadow-md">
+                                    <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                                    <span>KAMERA STUDIO</span>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="isCountingDown || countdown === 0"
+                                class="absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none select-none bg-black/25"
+                            >
+                                <span
+                                    :key="countdown"
+                                    class="font-black text-amber-300 drop-shadow-[0_8px_32px_rgba(0,0,0,0.95)]"
+                                    :class="countdown === 0 ? 'text-5xl text-white animate-bounce' : 'text-9xl animate-scale-up font-mono'"
+                                >
+                                    {{ countdown === 0 ? '📸 SMILE!' : countdown }}
+                                </span>
+                            </div>
+
+                            <div
+                                v-if="isFlashingSlot !== null"
+                                class="absolute inset-0 bg-white z-40 animate-flash pointer-events-none"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BOTTOM BAR: BIG PINK SHUTTER BUTTON & KEYBOARD HINT -->
+                <div class="w-full flex flex-col items-center justify-center max-w-5xl mx-auto pt-1 sm:pt-2 z-20">
                     <button
                         v-if="captureStage === 'ready'"
                         @click="startCapture(currentSlotIndex)"
@@ -1135,6 +1463,10 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                     >
                         <span>MEMPROSES...</span>
                     </div>
+
+                    <span class="text-[11px] text-slate-400 mt-1.5 hidden sm:inline">
+                        Tips: Tekan tombol Spasi atau Enter pada keyboard untuk mengambil foto
+                    </span>
                 </div>
             </div>
 
