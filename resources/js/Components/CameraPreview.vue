@@ -81,11 +81,18 @@ async function initWebcamOrSimulated() {
     cameraError.value = null;
 
     // Pengecekan HTTPS — wajib untuk iPhone (Safari) dan browser modern di Android/VPS
+    // Catatan: window.isSecureContext bisa false di belakang proxy/Cloudflare Zero Trust
+    // meski koneksi ke Cloudflare sudah HTTPS. Karena itu kita cek juga location.protocol.
+    const isHttps = typeof window !== 'undefined' && (
+        window.isSecureContext ||
+        location.protocol === 'https:' ||
+        location.hostname === 'localhost' ||
+        location.hostname === '127.0.0.1'
+    );
+
     if (
         typeof window !== 'undefined' &&
-        !window.isSecureContext &&
-        location.hostname !== 'localhost' &&
-        location.hostname !== '127.0.0.1'
+        !isHttps
     ) {
         const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP). Buka via https:// untuk mengizinkan kamera di iPhone / Android.`;
         cameraError.value = msg;
