@@ -58,6 +58,7 @@ class PrintStationController extends Controller
             'web_station_enabled' => true,
             'selected_booth' => $selectedBooth,
             'available_booths' => $availableBooths,
+            'server_os' => PHP_OS_FAMILY,
             'stats' => [
                 'today_jobs' => $todayJobsCount,
                 'today_completed' => (int)$todayCompletedCount,

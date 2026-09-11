@@ -265,3 +265,12 @@ Buka URL pada browser:
      ```bash
      php artisan storage:link
      ```
+
+5. **Print Station di VPS Tidak Bisa Membaca Printer Lokal Komputer / Tidak Mau Cetak Otomatis**:
+   - **Penyebab**: Server backend berjalan di VPS (Linux), sehingga server tidak bisa mengakses kabel USB printer yang dicolok ke laptop/PC di lokasi event.
+   - **Solusi Otomatis Sekali-Klik (Tanpa PowerShell)**:
+     1. Di komputer kasir/stand yang terhubung dengan kabel printer, jadikan printer fisik Anda sebagai **Default Printer** di Windows (`Settings > Printers & Scanners > Set as default`).
+     2. Buka `https://photo.domainanda.sch.id/print-station?booth=STAND-01`.
+     3. Klik tombol hijau **"Download .BAT Launcher"** di bilah atas untuk mengunduh `start-print-station-stand-01.bat` (atau gunakan file `start-print-station.bat` di root project).
+     4. Tutup browser Chrome / Edge, lalu klik ganda (double-click) file **`.bat`** tersebut.
+     5. Browser akan terbuka dalam mode **Kiosk Silent Print**. Sekarang setiap foto baru yang selesai diproses akan **langsung tercetak secara otomatis 100% tanpa pop-up dialog print**.

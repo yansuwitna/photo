@@ -21,7 +21,8 @@ import {
     SlidersHorizontal,
     ArrowLeft,
     Settings,
-    CheckSquare
+    CheckSquare,
+    Download
 } from 'lucide-vue-next';
 import axios from 'axios';
 import { useAudioStore } from '@/stores/audioStore';
@@ -51,6 +52,7 @@ const props = defineProps<{
     web_station_enabled: boolean;
     selected_booth?: string;
     available_booths?: string[];
+    server_os?: string;
     stats?: {
         today_jobs: number;
         today_completed: number;
@@ -68,23 +70,26 @@ const activeJob = ref<PrintJobItem | null>(null);
 const printProgress = ref(0);
 const pendingJobs = ref<PrintJobItem[]>([]);
 const recentJobs = ref<PrintJobItem[]>([]);
-const activePrinter = ref(props.active_printer);
-const activePaperSize = ref(props.active_paper_size || '4R');
-const printersList = ref<any[]>(props.printers || []);
+
+// Modal State
 const showPrinterModal = ref(false);
+const showGuideModal = ref(false);
+const chosenPrinterId = ref<number | null>(null);
+const chosenPaperSize = ref<string>('4R');
 const isSavingPrinter = ref(false);
 const isSyncingPrinters = ref(false);
-const chosenPrinterId = ref<number | null>(props.active_printer?.id || null);
-const chosenPaperSize = ref<string>(props.active_paper_size || '4R');
-const showGuideModal = ref(false);
+const printersList = ref<any[]>(props.printers || []);
+const activePrinter = ref<any>(props.active_printer || null);
+const activePaperSize = ref<string>(props.active_paper_size || '4R');
 const isTestingPrint = ref(false);
 const previewPhotoUrl = ref<string | null>(null);
 const copiedShortcut = ref(false);
 
-// Mode Cetak: 'direct' (Direct Windows Spooler tanpa dialog) atau 'browser' (Iframe Web Print)
-const printMethod = ref<'direct' | 'browser'>(
-    (typeof window !== 'undefined' ? (localStorage.getItem('print_station_method') as any) : null) || 'direct'
-);
+// Mode Cetak: Pada VPS Linux / Cloud remote, default ke 'browser' (agar mencetak via Kiosk Print ke printer PC lokal)
+// Pada localhost / Windows Server lokal, default ke 'direct' (Direct Spooler lokal)
+const defaultMethod = props.server_os === 'Windows' ? 'direct' : 'browser';
+const savedMethod = typeof window !== 'undefined' ? (localStorage.getItem('print_station_method') as any) : null;
+const printMethod = ref<'direct' | 'browser'>(savedMethod || defaultMethod);
 const chosenPrintMethod = ref<'direct' | 'browser'>(printMethod.value);
 
 const availablePaperSizes = [
@@ -597,6 +602,25 @@ function copyRunCommand() {
         copiedShortcut.value = false;
     }, 2500);
 }
+
+// Download file .bat sekali klik untuk operator stand PC Windows
+function downloadBatFile() {
+    const url = new URL(window.location.origin + '/print-station');
+    if (selectedBooth.value) {
+        url.searchParams.set('booth', selectedBooth.value);
+    }
+    const batContent = `@echo off\r\ntitle PhotoBooth Pro - Web Print Station (${selectedBooth.value})\r\ncolor 0b\r\n\r\necho ======================================================================\r\necho           PHOTOBOOTH PRO - WEB PRINT STATION (SILENT MODE)\r\necho ======================================================================\r\necho.\r\necho Mode Silent Kiosk Print memungkinkan komputer ini mencetak secara\r\necho 100%% otomatis ke Printer Default Windows tanpa pop-up dialog print!\r\necho.\r\nset "TARGET_URL=${url.toString()}"\r\necho Menghubungkan ke : %TARGET_URL%\r\necho.\r\n\r\nset "BROWSER_EXE="\r\nif exist "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe" (\r\n    set "BROWSER_EXE=%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe"\r\n) else if exist "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe" (\r\n    set "BROWSER_EXE=%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe"\r\n) else if exist "%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe" (\r\n    set "BROWSER_EXE=%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe"\r\n) else if exist "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe" (\r\n    set "BROWSER_EXE=%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe"\r\n) else if exist "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe" (\r\n    set "BROWSER_EXE=%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"\r\n)\r\n\r\nif not "%BROWSER_EXE%"=="" (\r\n    echo [OK] Browser terdeteksi: "%BROWSER_EXE%"\r\n    echo [OK] Menjalankan Print Station mode --kiosk-printing...\r\n    start "" "%BROWSER_EXE%" --kiosk-printing --app="%TARGET_URL%"\r\n) else (\r\n    echo [INFO] Menjalankan perintah bawaan chrome...\r\n    start chrome.exe --kiosk-printing --app="%TARGET_URL%" 2>nul || start msedge.exe --kiosk-printing --app="%TARGET_URL%"\r\n)\r\n\r\necho.\r\necho Selesai. Print Station sedang berjalan di latar depan.\r\ntimeout /t 3 >nul\r\nexit\r\n`;
+
+    const blob = new Blob([batContent], { type: 'application/x-bat' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `start-print-station-${selectedBooth.value.toLowerCase()}.bat`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+    showSuccess('Download Berhasil', `File launcher '${link.download}' berhasil diunduh. Cukup klik ganda (double-click) di PC Windows.`);
+}
 </script>
 
 <template>
@@ -689,6 +713,17 @@ function copyRunCommand() {
                     <Volume2 v-if="soundEnabled" class="w-4 h-4 text-emerald-400" />
                     <VolumeX v-else class="w-4 h-4" />
                     <span class="hidden md:inline">{{ soundEnabled ? 'Audio Aktif' : 'Mute' }}</span>
+                </button>
+
+                <!-- Download Launcher .BAT -->
+                <button
+                    @click="downloadBatFile"
+                    class="px-2.5 sm:px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-black flex items-center gap-1.5 sm:gap-2 transition-all shadow-sm active:scale-95 cursor-pointer"
+                    title="Unduh launcher .bat otomatis untuk PC Windows"
+                >
+                    <Download class="w-4 h-4 text-emerald-400" />
+                    <span class="hidden md:inline">Download .BAT Launcher</span>
+                    <span class="md:hidden">.BAT</span>
                 </button>
 
                 <!-- Help Silent Print Guide -->
@@ -830,25 +865,25 @@ function copyRunCommand() {
                         <span class="text-[10px] text-amber-300/80 bg-amber-500/10 px-2 py-0.5 rounded-lg font-mono">1 Stand = 1 Printer</span>
                     </div>
 
-                    <!-- DIRECT PRINT SPOOLER STATUS -->
+                    <!-- DIRECT / BROWSER PRINT STATUS -->
                     <div class="mt-2.5 p-3 rounded-2xl border flex items-center justify-between text-xs"
-                        :class="printMethod === 'direct' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'"
+                        :class="printMethod === 'browser' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'"
                     >
                         <div class="flex items-center gap-2.5">
-                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="printMethod === 'direct' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'"></span>
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="printMethod === 'browser' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'"></span>
                             <div>
                                 <span class="font-black text-white block text-[11px]">
-                                    {{ printMethod === 'direct' ? '⚡ Direct Spooler Aktif (Langsung Cetak)' : '🌐 Mode Dialog Web Print Browser' }}
+                                    {{ printMethod === 'browser' ? '🌐 Browser Web Print (Rekomendasi VPS)' : '⚡ Direct Spooler Server' }}
                                 </span>
                                 <span class="text-[10px] text-slate-400 block">
-                                    {{ printMethod === 'direct' ? 'Otomatis ke printer Windows tanpa pop-up dialog & tanpa klik konfirmasi.' : 'Membuka preview dialog cetak browser.' }}
+                                    {{ printMethod === 'browser' ? 'Mencetak ke printer PC ini. Buka via file .BAT di atas agar 100% otomatis tanpa dialog.' : 'Mencetak via driver backend di server lokal.' }}
                                 </span>
                             </div>
                         </div>
                         <button
                             @click="openPrinterModal"
                             class="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex-shrink-0 ml-2"
-                            :class="printMethod === 'direct' ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'"
+                            :class="printMethod === 'browser' ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'"
                         >
                             Ubah
                         </button>
@@ -1074,38 +1109,58 @@ function copyRunCommand() {
                 </div>
 
                 <div class="space-y-4 my-6 text-xs text-slate-300">
-                    <!-- Feature Highlight: Direct Spooler -->
-                    <div class="flex gap-3 items-start bg-emerald-950/40 p-3.5 rounded-2xl border border-emerald-500/30">
-                        <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0">✓</div>
-                        <div>
-                            <p class="font-bold text-white flex items-center gap-2">
-                                <span>Direct Spooler Aktif (Langsung Cetak)</span>
-                                <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Bebas Pop-up</span>
+                    <!-- Feature Highlight: One-Click .BAT -->
+                    <div class="flex gap-3 items-start bg-emerald-950/40 p-4 rounded-2xl border border-emerald-500/30">
+                        <div class="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0 text-sm">⚡</div>
+                        <div class="flex-1">
+                            <p class="font-black text-white flex items-center gap-2">
+                                <span>Solusi Otomatis Sekali-Klik (.BAT)</span>
+                                <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Tanpa PowerShell</span>
                             </p>
                             <p class="text-slate-300 mt-1 leading-relaxed">
-                                Sistem langsung mengirimkan tugas cetak ke Windows Print Spooler untuk printer yang Anda pilih. <strong>Dialog Web Print browser tidak akan muncul</strong> dan operator tidak perlu lagi mengklik tombol konfirmasi 'Cetak' pada browser.
+                                Anda tidak perlu membuka PowerShell atau mengetik perintah apapun. Cukup unduh file launcher <strong>.bat</strong> di bawah ini ke PC yang dicolok printer, lalu klik ganda (double-click). Browser akan otomatis terbuka dalam mode cetak tanpa pop-up dialog!
                             </p>
+                            <div class="mt-3">
+                                <button
+                                    @click="downloadBatFile"
+                                    class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+                                >
+                                    <Download class="w-4 h-4" />
+                                    <span>Unduh File .BAT (Stand: {{ selectedBooth }})</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Step 1: Physical Printer -->
+                    <!-- Step 1: Default Printer -->
                     <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
                         <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center flex-shrink-0">1</div>
                         <div>
-                            <p class="font-bold text-white">Pastikan Kabel USB & Daya Printer Terpasang</p>
-                            <p class="text-slate-400 mt-0.5">
-                                Pastikan printer USB (Epson, Canon, DNP, dll) terhubung dan menyala. Jika printer sempat offline, pekerjaan cetak tetap tersimpan di antrean Windows Spooler dan otomatis dicetak saat printer menyala.
+                            <p class="font-bold text-white">Jadikan Printer Fisik Anda Sebagai "Default Printer" di Windows</p>
+                            <p class="text-slate-400 mt-0.5 leading-relaxed">
+                                Buka <strong>Windows Settings &gt; Printers &amp; Scanners</strong>, klik printer Anda (misal Epson L1210 / DNP / Canon), lalu pilih <strong>"Set as default"</strong>.
                             </p>
                         </div>
                     </div>
 
-                    <!-- Step 2: Multi-stand per laptop -->
+                    <!-- Step 2: Double Click BAT -->
                     <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
                         <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center flex-shrink-0">2</div>
                         <div>
-                            <p class="font-bold text-white">Konfigurasi 1 Stand = 1 Printer Per Laptop</p>
-                            <p class="text-slate-400 mt-0.5">
-                                Pada laptop stand masing-masing, buka halaman ini dan pilih Stand-nya (misal <strong>STAND-01</strong> di Laptop 1, <strong>STAND-02</strong> di Laptop 2). Pilih printer fisik masing-masing lewat tombol <strong>Ganti Printer</strong>.
+                            <p class="font-bold text-white">Jalankan File .BAT yang Telah Diunduh</p>
+                            <p class="text-slate-400 mt-0.5 leading-relaxed">
+                                Klik ganda file <code>start-print-station-{{ selectedBooth.toLowerCase() }}.bat</code>. Jendela browser Chrome / Edge akan terbuka otomatis dan langsung standby menangani antrean cetak untuk Stand ini tanpa dialog print.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Multi-stand info -->
+                    <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
+                        <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center flex-shrink-0">3</div>
+                        <div>
+                            <p class="font-bold text-white">Bisa Digunakan Multi-Stand (Banyak Stand Sekaligus)</p>
+                            <p class="text-slate-400 mt-0.5 leading-relaxed">
+                                Jika Anda memiliki 2 atau 3 stand foto dengan laptop masing-masing, cukup pilih Stand-nya di menu atas (misal STAND-02), lalu unduh .BAT untuk stand tersebut. Setiap laptop hanya akan mencetak foto yang dipesan di stand-nya sendiri.
                             </p>
                         </div>
                     </div>
@@ -1255,40 +1310,43 @@ function copyRunCommand() {
                         </label>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                             <div
-                                @click="chosenPrintMethod = 'direct'"
+                                @click="chosenPrintMethod = 'browser'"
                                 class="p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3"
-                                :class="chosenPrintMethod === 'direct' 
+                                :class="chosenPrintMethod === 'browser' 
                                     ? 'bg-emerald-500/15 border-emerald-500 shadow-md ring-2 ring-emerald-500/20' 
                                     : 'bg-slate-950/60 border-white/5 hover:border-white/20'"
                             >
                                 <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0 text-sm">
-                                    ⚡
+                                    🌐
                                 </div>
                                 <div class="min-w-0">
                                     <div class="flex items-center gap-1.5">
-                                        <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'direct' ? 'text-emerald-300' : ''">Direct Spooler</span>
-                                        <span class="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 text-[9px] font-bold">Rekomendasi</span>
+                                        <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'browser' ? 'text-emerald-300' : ''">Browser Web Print</span>
+                                        <span class="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 text-[9px] font-bold">Wajib untuk VPS</span>
                                     </div>
                                     <p class="text-[11px] text-slate-400 mt-1 leading-normal">
-                                        Langsung cetak ke printer Windows tanpa pop-up dialog web print dan tanpa harus klik cetak lagi.
+                                        Cetak via browser PC ke printer lokal. Bila dibuka via file <strong>.BAT</strong>, cetak 100% otomatis tanpa pop-up dialog!
                                     </p>
                                 </div>
                             </div>
 
                             <div
-                                @click="chosenPrintMethod = 'browser'"
+                                @click="chosenPrintMethod = 'direct'"
                                 class="p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3"
-                                :class="chosenPrintMethod === 'browser' 
+                                :class="chosenPrintMethod === 'direct' 
                                     ? 'bg-amber-500/15 border-amber-500 shadow-md ring-2 ring-amber-500/20' 
                                     : 'bg-slate-950/60 border-white/5 hover:border-white/20'"
                             >
-                                <div class="w-8 h-8 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center flex-shrink-0 text-sm">
-                                    🌐
+                                <div class="w-8 h-8 rounded-xl bg-white/5 text-slate-400 font-black flex items-center justify-center flex-shrink-0 text-sm">
+                                    ⚡
                                 </div>
                                 <div class="min-w-0">
-                                    <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'browser' ? 'text-amber-300' : ''">Browser Web Print</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'direct' ? 'text-amber-300' : ''">Direct Spooler Server</span>
+                                        <span class="px-1.5 py-0.2 rounded bg-white/10 text-slate-400 text-[9px] font-bold">Localhost Saja</span>
+                                    </div>
                                     <p class="text-[11px] text-slate-400 mt-1 leading-normal">
-                                        Membuka preview dialog cetak bawaan browser (memerlukan klik cetak di browser).
+                                        Cetak langsung via spooler server backend. Hanya berfungsi jika Laravel berjalan di PC Windows lokal (bukan di VPS cloud).
                                     </p>
                                 </div>
                             </div>
