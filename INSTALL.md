@@ -35,15 +35,21 @@ Skrip di atas akan secara otomatis:
 
 ## 3. Instalasi di VPS Linux (Ubuntu / Debian / Production)
 
-### Langkah 1: Persiapan Server & Dependensi PHP
+### Langkah 1: Persiapan Server & Dependensi PHP (Wajib PHP-GD)
 ```bash
 # Update repository
 sudo apt update && sudo apt upgrade -y
 
-# Pasang dependensi PHP & ekstensi pendukung (contoh PHP 8.2/8.3)
+# Pasang dependensi PHP & ekstensi pendukung (wajib sertakan php-gd untuk render foto 300 DPI)
 sudo apt install -y php-cli php-fpm php-mysql php-gd php-curl \
   php-mbstring php-xml php-zip php-exif php-intl composer \
   nodejs npm nginx mariadb-server git
+
+# Pastikan ekstensi GD aktif di CLI dan FPM
+php -m | grep gd
+
+# Restart PHP-FPM dan Nginx agar ekstensi baru terbaca
+sudo systemctl restart php*-fpm nginx
 ```
 
 ### Langkah 2: Kloning & Dependensi Backend
@@ -235,7 +241,26 @@ Buka URL pada browser:
      php artisan optimize:clear
      ```
 
-3. **Foto Final / Thumbnail Tidak Tampil**:
+3. **Error "Call to undefined function imagecreatetruecolor()" saat Compose / Simpan Foto**:
+   - Error ini terjadi jika ekstensi PHP GD belum terpasang di VPS.
+   - Pasang dan aktifkan ekstensi GD:
+     ```bash
+     sudo apt update
+     sudo apt install -y php-gd
+     # Atau untuk versi spesifik (contoh PHP 8.2 / 8.3):
+     # sudo apt install -y php8.2-gd
+     ```
+   - Restart service PHP-FPM dan Web Server:
+     ```bash
+     sudo systemctl restart php*-fpm
+     sudo systemctl restart nginx
+     ```
+   - Verifikasi bahwa GD sudah aktif:
+     ```bash
+     php -m | grep gd
+     ```
+
+4. **Foto Final / Thumbnail Tidak Tampil**:
    - Pastikan symlink publik telah terhubung:
      ```bash
      php artisan storage:link
