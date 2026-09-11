@@ -207,12 +207,14 @@ async function initCamera() {
     cameraError.value = null;
 
     // Pengecekan HTTPS — wajib untuk iPhone (Safari) dan browser modern di Android/VPS
-    if (
-        typeof window !== 'undefined' &&
-        !window.isSecureContext &&
-        location.hostname !== 'localhost' &&
-        location.hostname !== '127.0.0.1'
-    ) {
+    // Catatan: window.isSecureContext bisa false di belakang Cloudflare/reverse proxy meski URL https://
+    // Maka kita juga cek location.protocol sebagai fallback
+    const isSecure =
+        location.protocol === 'https:' ||
+        window.isSecureContext ||
+        location.hostname === 'localhost' ||
+        location.hostname === '127.0.0.1';
+    if (typeof window !== 'undefined' && !isSecure) {
         const msg = `Akses kamera diblokir karena koneksi tidak aman (HTTP). Gunakan https:// untuk mengizinkan kamera di iPhone / Android.`;
         cameraError.value = msg;
         hasActiveStream.value = false;
