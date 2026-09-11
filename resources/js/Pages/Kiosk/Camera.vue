@@ -470,9 +470,10 @@ async function executeCameraCapture(slot: number) {
                 }, 1800);
             }
         }
-    } catch (err) {
+    } catch (err: any) {
         console.error('Capture error', err);
-        showError('Gagal Mengambil Foto', 'Kamera tidak merespon. Silakan periksa atau coba lagi.');
+        const serverMsg = err?.response?.data?.message || err?.message || 'Kamera tidak merespon.';
+        showError('Gagal Mengambil Foto', `${serverMsg} Silakan periksa atau coba lagi.`);
         captureStage.value = 'ready';
     }
 }
@@ -526,8 +527,9 @@ async function handleProceedToCompose() {
             finalPhotoTimestamp.value = Date.now();
             audioStore.playSuccess();
         }
-    } catch (err) {
-        showError('Gagal Menyusun Foto', 'Terjadi kesalahan saat menyusun resolusi tinggi 300 DPI. Silakan coba kembali.');
+    } catch (err: any) {
+        const serverMsg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan saat menyusun template 300 DPI.';
+        showError('Gagal Menyusun Foto', `${serverMsg} Silakan coba kembali.`);
     } finally {
         isComposing.value = false;
     }

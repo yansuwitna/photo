@@ -54,26 +54,63 @@ class StorageManager
 
     public function createThumbnail(string $sourceFile, string $targetFile, int $thumbWidth = 400): bool
     {
-        if (!file_exists($sourceFile)) return false;
+        try {
+            if (!file_exists($sourceFile)) return false;
 
-        $dir = dirname($targetFile);
-        if (!is_dir($dir)) mkdir($dir, 0755, true);
+            $dir = dirname($targetFile);
+            \Illuminate\Support\Facades\File::ensureDirectoryExists($dir, 0775, true);
 
-        list($width, $height) = getimagesize($sourceFile);
-        if ($width <= 0 || $height <= 0) return false;
+            // Periksa ekstensi GD apakah aktif
+            if (!extension_loaded('gd') || !function_exists('imagecreatetruecolor')) {
+                // Fallback copy file jika GD tidak tersedia di server
+                @copy($sourceFile, $targetFile);
+                return true;
+            }
 
-        $thumbHeight = (int)($height * ($thumbWidth / $width));
-        $thumb = imagecreatetruecolor($thumbWidth, $thumbHeight);
+            $imgInfo = @getimagesize($sourceFile);
+            if (!$imgInfo || empty($imgInfo[0]) || empty($imgInfo[1])) {
+                @copy($sourceFile, $targetFile);
+                return true;
+            }
 
-        $source = imagecreatefromjpeg($sourceFile) ?: imagecreatefrompng($sourceFile);
-        if (!$source) return false;
+            $width = $imgInfo[0];
+            $height = $imgInfo[1];
+            $mime = $imgInfo['mime'] ?? '';
 
-        imagecopyresampled($thumb, $source, 0, 0, 0, 0, $thumbWidth, $thumbHeight, $width, $height);
-        imagejpeg($thumb, $targetFile, 85);
+            $thumbHeight = (int)($height * ($thumbWidth / max(1, $width)));
+            $thumb = imagecreatetruecolor($thumbWidth, max(1, $thumbHeight));
 
-        imagedestroy($thumb);
-        imagedestroy($source);
+            $source = null;
+            if (str_contains($mime, 'png') && function_exists('imagecreatefrompng')) {
+                $source = @imagecreatefrompng($sourceFile);
+            } elseif (function_exists('imagecreatefromjpeg')) {
+                $source = @imagecreatefromjpeg($sourceFile);
+            }
 
-        return true;
+            if (!$source && function_exists('imagecreatefromstring')) {
+                $raw = @file_get_contents($sourceFile);
+                if ($raw) {
+                    $source = @imagecreatefromstring($raw);
+                }
+            }
+
+            if (!$source) {
+                @copy($sourceFile, $targetFile);
+                if ($thumb) imagedestroy($thumb);
+                return true;
+            }
+
+            imagecopyresampled($thumb, $source, 0, 0, 0, 0, $thumbWidth, $thumbHeight, $width, $height);
+            imagejpeg($thumb, $targetFile, 85);
+
+            imagedestroy($thumb);
+            imagedestroy($source);
+
+            return true;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("StorageManager createThumbnail error: " . $e->getMessage());
+            @copy($sourceFile, $targetFile);
+            return true;
+        }
     }
 }

@@ -85,11 +85,9 @@ class SessionManager
         $relPath = "events/{$eventSlug}/sessions/{$session->id}/originals/{$filename}";
         $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($relPath);
 
-        // Pastikan folder tujuan ada
+        // Pastikan folder tujuan ada dengan File::ensureDirectoryExists
         $dir = dirname($fullPath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($dir, 0775, true);
 
         // Cek jika gambar dikirim langsung dari kamera HP/Tablet (Standalone Mobile Mode)
         if (!empty($imageData)) {
@@ -122,11 +120,17 @@ class SessionManager
             }
         }
 
-        // Thumbnail
+        // Thumbnail (aman dengan try-catch agar kegagalan thumbnail tidak membatalkan capture foto)
         $thumbFilename = "thumb_" . $filename;
         $relThumb = "events/{$eventSlug}/sessions/{$session->id}/thumbnails/{$thumbFilename}";
         $thumbFullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($relThumb);
-        $this->storage->createThumbnail($fullPath, $thumbFullPath);
+        try {
+            \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($thumbFullPath), 0775, true);
+            $this->storage->createThumbnail($fullPath, $thumbFullPath);
+        } catch (\Throwable $th) {
+            \Illuminate\Support\Facades\Log::warning("Thumbnail generation warning: " . $th->getMessage());
+            $relThumb = $relPath; // Fallback gunakan original jika thumbnail gagal
+        }
 
         // Simpan / update ke database
         $sessionPhoto = SessionPhoto::updateOrCreate(
