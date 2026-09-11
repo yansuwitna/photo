@@ -162,7 +162,7 @@ class DeviceApiController extends Controller
         ]);
     }
 
-    protected function autoSyncPrinters(bool $force = false): void
+    public function autoSyncPrinters(bool $force = false): void
     {
         if (PHP_OS_FAMILY === 'Windows') {
             try {

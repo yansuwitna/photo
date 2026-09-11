@@ -33,16 +33,20 @@ class SessionManager
     public function startNewSession(?int $templateId = null, ?int $eventId = null, ?string $boothId = 'STAND-01'): BoothSession
     {
         $event = $eventId ? Event::find($eventId) : Event::where('is_active', true)->first();
-        $template = $templateId ? Template::find($templateId) : (Template::where('is_default', true)->first() ?: Template::first());
+        $template = $templateId ? Template::find($templateId) : (Template::where('is_active', true)->where('is_default', true)->first() ?: Template::where('is_active', true)->first() ?: Template::first());
 
         $sessionCode = 'PB-' . date('Ymd') . '-' . strtoupper(Str::random(4));
         $digitalCode = strtoupper(Str::random(8));
+        $resolvedBooth = $boothId ?: 'STAND-01';
+        $printerManager = new PrinterManager();
+        $boothPrinter = $printerManager->getPrinterForBooth($resolvedBooth);
 
         $session = BoothSession::create([
             'session_code' => $sessionCode,
             'event_id' => $event?->id,
             'template_id' => $template?->id,
-            'booth_id' => $boothId ?: 'STAND-01',
+            'printer_id' => $boothPrinter?->id,
+            'booth_id' => $resolvedBooth,
             'status' => 'init',
             'current_step' => 'template',
             'total_photos_required' => $template ? $template->photo_count : 3,
@@ -214,7 +218,7 @@ class SessionManager
 
         $printerManager = new PrinterManager();
         $paperSize = $requestedPaperSize 
-            ?: $printerManager->getActivePaperSize($session->template?->paper_size);
+            ?: $printerManager->getActivePaperSize($session->template?->paper_size, $session->booth_id);
 
         $printRes = $printerManager->printFile($session->id, $fullPath, $copies, $paperSize, $session->booth_id);
 

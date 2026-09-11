@@ -33,13 +33,17 @@ class KioskController extends Controller
     public function camera(string $sessionId): Response
     {
         $session = BoothSession::with(['event', 'template.elements', 'photos', 'camera', 'printer'])->findOrFail($sessionId);
-        $template = $session->template ?: Template::with('elements')->first();
+        $template = ($session->template && $session->template->is_active) 
+            ? $session->template 
+            : (Template::where('is_active', true)->where('is_default', true)->first() 
+                ?: Template::where('is_active', true)->first() 
+                ?: Template::first());
         if ($template) {
             $template->loadMissing('elements');
         }
         $printerManager = new \App\Services\Hardware\PrinterManager();
-        $activePrinter = $printerManager->getPrinterModel();
-        $activePaperSize = $printerManager->getActivePaperSize($template?->paper_size);
+        $activePrinter = $printerManager->getPrinterForBooth($session->booth_id);
+        $activePaperSize = $printerManager->getActivePaperSize($template?->paper_size, $session->booth_id);
         $templates = Template::where('is_active', true)->with('elements')->get();
 
         return Inertia::render('Kiosk/Camera', [

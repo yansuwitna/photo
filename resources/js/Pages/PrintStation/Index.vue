@@ -19,7 +19,9 @@ import {
     Sparkles, 
     Layers,
     SlidersHorizontal,
-    ArrowLeft
+    ArrowLeft,
+    Settings,
+    CheckSquare
 } from 'lucide-vue-next';
 import axios from 'axios';
 import { useAudioStore } from '@/stores/audioStore';
@@ -45,6 +47,7 @@ interface PrintJobItem {
 const props = defineProps<{
     active_printer?: any;
     active_paper_size?: string;
+    printers?: any[];
     web_station_enabled: boolean;
     selected_booth?: string;
     available_booths?: string[];
@@ -67,10 +70,24 @@ const pendingJobs = ref<PrintJobItem[]>([]);
 const recentJobs = ref<PrintJobItem[]>([]);
 const activePrinter = ref(props.active_printer);
 const activePaperSize = ref(props.active_paper_size || '4R');
+const printersList = ref<any[]>(props.printers || []);
+const showPrinterModal = ref(false);
+const isSavingPrinter = ref(false);
+const isSyncingPrinters = ref(false);
+const chosenPrinterId = ref<number | null>(props.active_printer?.id || null);
+const chosenPaperSize = ref<string>(props.active_paper_size || '4R');
 const showGuideModal = ref(false);
 const isTestingPrint = ref(false);
 const previewPhotoUrl = ref<string | null>(null);
 const copiedShortcut = ref(false);
+
+const availablePaperSizes = [
+    { value: '4R', label: '4R (10 x 15 cm / 4x6")' },
+    { value: 'Strip 2x6', label: 'Strip 2x6 (5 x 15 cm / 2x6")' },
+    { value: '5R', label: '5R (13 x 18 cm / 5x7")' },
+    { value: '6R', label: '6R (15 x 20 cm / 6x8")' },
+    { value: 'A4', label: 'A4 (21 x 29.7 cm)' },
+];
 
 // Booth identity state
 const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -98,6 +115,57 @@ function changeBooth(booth: string) {
     fetchJobs();
 }
 
+function openPrinterModal() {
+    chosenPrinterId.value = activePrinter.value?.id || (printersList.value.length > 0 ? printersList.value[0].id : null);
+    chosenPaperSize.value = activePaperSize.value || '4R';
+    showPrinterModal.value = true;
+}
+
+async function handleSavePrinter() {
+    if (!chosenPrinterId.value) {
+        showError('Pilih Printer', 'Silakan pilih salah satu printer dari daftar.');
+        return;
+    }
+    isSavingPrinter.value = true;
+    try {
+        const res = await axios.post('/api/print-station/select-printer', {
+            booth_id: selectedBooth.value,
+            printer_id: chosenPrinterId.value,
+            paper_size: chosenPaperSize.value,
+        });
+        if (res.data.success) {
+            activePrinter.value = res.data.active_printer;
+            activePaperSize.value = res.data.active_paper_size;
+            showPrinterModal.value = false;
+            showSuccess('Printer Disimpan', res.data.message || `Printer ${selectedBooth.value} berhasil diubah!`);
+            await fetchJobs();
+        } else {
+            showError('Gagal Menyimpan', res.data.message);
+        }
+    } catch (e: any) {
+        showError('Gagal Menyimpan Printer', e?.response?.data?.message || 'Terjadi kesalahan sistem.');
+    } finally {
+        isSavingPrinter.value = false;
+    }
+}
+
+async function handleSyncPrinters() {
+    isSyncingPrinters.value = true;
+    try {
+        const res = await axios.post('/api/print-station/sync-printers');
+        if (res.data.success) {
+            printersList.value = res.data.printers || [];
+            showSuccess('Sinkronisasi Berhasil', res.data.message || 'Daftar printer sistem operasi berhasil diperbarui.');
+        } else {
+            showError('Sinkronisasi Gagal', res.data.message);
+        }
+    } catch (e: any) {
+        showError('Gagal Sinkronisasi', e?.response?.data?.message || 'Gagal memindai printer sistem operasi.');
+    } finally {
+        isSyncingPrinters.value = false;
+    }
+}
+
 const completedCount = ref(props.stats?.today_completed || 0);
 const queueCount = computed(() => pendingJobs.value.length);
 
@@ -105,6 +173,12 @@ let pollTimer: any = null;
 
 onMounted(() => {
     audioStore.initContext();
+    if (props.active_printer) {
+        chosenPrinterId.value = props.active_printer.id;
+    }
+    if (props.active_paper_size) {
+        chosenPaperSize.value = props.active_paper_size;
+    }
     fetchJobs();
     pollTimer = setInterval(pollAndPrintEngine, 2000);
 });
@@ -125,9 +199,18 @@ async function fetchJobs() {
             recentJobs.value = res.data.recent_jobs || [];
             if (res.data.active_printer) {
                 activePrinter.value = res.data.active_printer;
+                if (!showPrinterModal.value) {
+                    chosenPrinterId.value = res.data.active_printer.id;
+                }
             }
             if (res.data.active_paper_size) {
                 activePaperSize.value = res.data.active_paper_size;
+                if (!showPrinterModal.value) {
+                    chosenPaperSize.value = res.data.active_paper_size;
+                }
+            }
+            if (res.data.printers) {
+                printersList.value = res.data.printers;
             }
         }
     } catch (e) {
@@ -534,6 +617,16 @@ function copyRunCommand() {
                     </option>
                     <option value="all" class="bg-slate-900 text-amber-400 font-bold">Semua Stand (Global)</option>
                 </select>
+
+                <!-- Quick Printer Button in Header -->
+                <button
+                    @click="openPrinterModal"
+                    class="ml-1 px-2.5 py-1 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                    title="Pilih printer fisik untuk stand ini"
+                >
+                    <Printer class="w-3.5 h-3.5" />
+                    <span class="hidden md:inline truncate max-w-[140px]">{{ activePrinter?.name || 'Pilih Printer' }}</span>
+                </button>
             </div>
 
             <!-- RIGHT CONTROLS -->
@@ -591,19 +684,24 @@ function copyRunCommand() {
                 <div class="bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-xl relative overflow-hidden">
                     <div class="flex items-center justify-between pb-4 border-b border-white/10">
                         <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
-                                <ShieldCheck class="w-5 h-5" />
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                                <Printer class="w-5 h-5" />
                             </div>
                             <div>
-                                <h2 class="text-sm font-bold text-white uppercase tracking-wider">Target Printer PC</h2>
-                                <p class="text-xs text-slate-400">Default Windows Spooler</p>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-sm font-bold text-white uppercase tracking-wider">Printer Stand</h2>
+                                    <span class="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-black font-mono border border-amber-500/30">
+                                        {{ selectedBooth === 'all' ? 'SEMUA STAND' : selectedBooth }}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400">Pencetakan mandiri untuk stand ini</p>
                             </div>
                         </div>
 
                         <!-- Auto-print Toggle Switch -->
                         <button
                             @click="handleToggleStation"
-                            class="px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-2 border transition-all"
+                            class="px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-2 border transition-all cursor-pointer"
                             :class="autoPrintEnabled ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-800 text-slate-300 border-white/10'"
                         >
                             <Play v-if="autoPrintEnabled" class="w-3.5 h-3.5 fill-current" />
@@ -611,25 +709,69 @@ function copyRunCommand() {
                         </button>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-4 mt-4 text-xs">
-                        <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-white/5">
-                            <span class="text-slate-400 block mb-1">Printer Terdaftar:</span>
-                            <span class="font-bold text-white text-sm truncate block" :title="activePrinter?.name">
-                                {{ activePrinter?.name || 'Windows Default Printer' }}
-                            </span>
-                            <span class="text-[11px] text-amber-400 mt-1 block">
-                                {{ activePrinter?.brand || 'Spooler' }} • {{ activePrinter?.connection_type || 'USB' }}
-                            </span>
+                    <!-- PRINTER DISPLAY & QUICK SELECTOR -->
+                    <div class="mt-4 bg-slate-950/70 p-4 rounded-2xl border border-white/5 flex flex-col gap-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Printer Terhubung:</span>
+                                <span class="font-black text-white text-base truncate block mt-0.5" :title="activePrinter?.name">
+                                    {{ activePrinter?.name || 'Windows Default Printer' }}
+                                </span>
+                                <div class="flex items-center gap-2 mt-1 flex-wrap text-xs">
+                                    <span class="px-2 py-0.5 rounded bg-white/10 text-amber-300 font-bold text-[10px]">
+                                        {{ activePrinter?.brand || 'Spooler' }}
+                                    </span>
+                                    <span class="text-slate-400 text-[11px]">
+                                        {{ activePrinter?.connection_type || 'USB' }}
+                                    </span>
+                                    <span class="text-slate-500">•</span>
+                                    <span class="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        {{ activePrinter?.status || 'Siap' }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                @click="openPrinterModal"
+                                class="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer flex-shrink-0 active:scale-95 shadow-xs"
+                                title="Pilih printer fisik untuk stand ini"
+                            >
+                                <Settings class="w-3.5 h-3.5" />
+                                <span>Ganti Printer</span>
+                            </button>
                         </div>
 
-                        <div class="bg-slate-950/60 p-3.5 rounded-2xl border border-white/5">
-                            <span class="text-slate-400 block mb-1">Ukuran Kertas:</span>
-                            <span class="font-bold text-amber-300 text-sm block">
-                                {{ activePaperSize }}
-                            </span>
-                            <span class="text-[11px] text-slate-400 mt-1 block">
-                                Margin: 0mm (Borderless)
-                            </span>
+                        <!-- PAPER SIZE & ACTIONS -->
+                        <div class="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="text-slate-400">Ukuran:</span>
+                                <span class="font-black text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                                    {{ activePaperSize }}
+                                </span>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <button
+                                    @click="handleSyncPrinters"
+                                    :disabled="isSyncingPrinters"
+                                    class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                                    title="Pindai ulang printer USB/Windows di PC ini"
+                                >
+                                    <RefreshCw class="w-3 h-3" :class="isSyncingPrinters ? 'animate-spin' : ''" />
+                                    <span>{{ isSyncingPrinters ? 'Pindai...' : 'Pindai OS' }}</span>
+                                </button>
+
+                                <button
+                                    @click="handleTestPrint"
+                                    :disabled="isTestingPrint || isPrinting"
+                                    class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/20 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                                    title="Uji cetak langsung ke printer stand ini"
+                                >
+                                    <Sparkles class="w-3 h-3" />
+                                    <span>Uji Cetak</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -640,7 +782,7 @@ function copyRunCommand() {
                             <span class="text-slate-300">Menangani Antrean:</span>
                             <span class="font-black text-amber-400">{{ selectedBooth === 'all' ? 'SEMUA STAND (GLOBAL)' : selectedBooth }}</span>
                         </div>
-                        <span class="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-lg font-mono">Silent Print</span>
+                        <span class="text-[10px] text-amber-300/80 bg-amber-500/10 px-2 py-0.5 rounded-lg font-mono">1 Stand = 1 Printer</span>
                     </div>
 
                     <!-- STAT COUNTERS -->
@@ -909,6 +1051,153 @@ function copyRunCommand() {
                         class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all shadow-md"
                     >
                         Saya Mengerti
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- MODAL PILIH PRINTER UNTUK STAND                                          -->
+        <!-- ========================================================================= -->
+        <div 
+            v-if="showPrinterModal" 
+            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
+        >
+            <div class="bg-slate-900 border border-white/15 rounded-3xl p-6 max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between pb-4 border-b border-white/10">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-600 text-slate-950 flex items-center justify-center shadow-lg font-black">
+                            <Printer class="w-5 h-5" />
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-base font-black text-white">Pilih Printer Stand</h3>
+                                <span class="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black font-mono border border-amber-500/30">
+                                    {{ selectedBooth === 'all' ? 'Semua Stand' : selectedBooth }}
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-400">Tentukan printer fisik dan ukuran kertas untuk stand ini</p>
+                        </div>
+                    </div>
+                    <button 
+                        @click="showPrinterModal = false"
+                        class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Modal Body (Scrollable) -->
+                <div class="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                    <!-- Informative Alert -->
+                    <div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 leading-relaxed flex items-start gap-2.5">
+                        <ShieldCheck class="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <span>
+                            Setiap stand foto booth memiliki printer fisiknya sendiri. Sesi foto yang dibuat pada stand <strong>{{ selectedBooth }}</strong> akan otomatis dicetak menggunakan printer yang Anda pilih di bawah.
+                        </span>
+                    </div>
+
+                    <!-- Printers List -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs font-black text-slate-300 uppercase tracking-wider">
+                                Daftar Printer Terdeteksi ({{ printersList.length }})
+                            </label>
+                            <button
+                                @click="handleSyncPrinters"
+                                :disabled="isSyncingPrinters"
+                                class="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                                <RefreshCw class="w-3 h-3" :class="isSyncingPrinters ? 'animate-spin' : ''" />
+                                <span>Pindai Printer Windows / USB</span>
+                            </button>
+                        </div>
+
+                        <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                            <div
+                                v-for="p in printersList"
+                                :key="p.id"
+                                @click="chosenPrinterId = p.id; if (p.default_paper_size && !chosenPaperSize) chosenPaperSize = p.default_paper_size;"
+                                class="p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between group"
+                                :class="chosenPrinterId === p.id 
+                                    ? 'bg-amber-500/10 border-amber-500 shadow-md ring-2 ring-amber-500/20' 
+                                    : 'bg-slate-950/60 border-white/5 hover:border-white/20 hover:bg-slate-950'"
+                            >
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <div 
+                                        class="w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
+                                        :class="chosenPrinterId === p.id ? 'bg-amber-500 text-slate-950 font-black' : 'bg-white/5 text-slate-400 group-hover:text-white'"
+                                    >
+                                        <Printer class="w-4 h-4" />
+                                    </div>
+                                    <div class="min-w-0">
+                                        <p class="text-xs font-black truncate text-white" :class="chosenPrinterId === p.id ? 'text-amber-300' : ''">
+                                            {{ p.name }}
+                                        </p>
+                                        <p class="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+                                            <span>{{ p.brand || 'Windows' }}</span>
+                                            <span>•</span>
+                                            <span>{{ p.connection_type || 'USB' }}</span>
+                                            <span v-if="p.default_paper_size" class="text-amber-400/90 font-mono">({{ p.default_paper_size }})</span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-2 flex-shrink-0">
+                                    <div 
+                                        class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all"
+                                        :class="chosenPrinterId === p.id ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-white/20'"
+                                    >
+                                        <Check v-if="chosenPrinterId === p.id" class="w-3 h-3 stroke-[3]" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="printersList.length === 0" class="text-center py-6 text-slate-400 text-xs bg-slate-950 rounded-2xl border border-white/5">
+                                Tidak ada printer terdaftar. Klik "Pindai Printer Windows / USB" di atas untuk mencari printer terpasang.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Paper Size Selector -->
+                    <div>
+                        <label class="text-xs font-black text-slate-300 uppercase tracking-wider block mb-2">
+                            Ukuran Kertas Stand Ini
+                        </label>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <button
+                                v-for="size in availablePaperSizes"
+                                :key="size.value"
+                                type="button"
+                                @click="chosenPaperSize = size.value"
+                                class="p-2.5 rounded-xl border text-left transition-all cursor-pointer"
+                                :class="chosenPaperSize === size.value 
+                                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-black' 
+                                    : 'bg-slate-950/60 border-white/5 hover:border-white/20 text-slate-300 font-medium'"
+                            >
+                                <div class="text-xs font-bold">{{ size.value }}</div>
+                                <div class="text-[10px] text-slate-400 mt-0.5 truncate">{{ size.label }}</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="pt-4 border-t border-white/10 flex items-center justify-between gap-3">
+                    <button 
+                        @click="showPrinterModal = false"
+                        class="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-bold transition-colors cursor-pointer"
+                    >
+                        Batal
+                    </button>
+                    <button 
+                        @click="handleSavePrinter"
+                        :disabled="isSavingPrinter || !chosenPrinterId"
+                        class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                    >
+                        <Check v-if="!isSavingPrinter" class="w-4 h-4 stroke-[2.5]" />
+                        <span>{{ isSavingPrinter ? 'Menyimpan...' : 'Simpan & Terapkan untuk ' + (selectedBooth === 'all' ? 'Semua Stand' : selectedBooth) }}</span>
                     </button>
                 </div>
             </div>

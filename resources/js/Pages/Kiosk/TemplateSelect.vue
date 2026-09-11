@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import KioskLayout from '@/Layouts/KioskLayout.vue';
 import TemplateCard from '@/Components/TemplateCard.vue';
@@ -48,9 +48,14 @@ async function handleRemoveFrame() {
     }
 }
 
-// Default pilih template pertama atau yang sudah terpasang
-const selectedTemplate = ref<Template>(
-    props.templates.find(t => t.id === props.session.template_id) || props.templates[0]
+// HANYA TEMPLATE YANG AKTIF DARI ADMIN (JIKA TIDAK ADA MAKA SEMBUNYIKAN)
+const activeTemplates = computed(() => {
+    return (props.templates || []).filter(t => Boolean(t.is_active));
+});
+
+// Default pilih template aktif yang sudah terpasang atau yang pertama
+const selectedTemplate = ref<Template | undefined>(
+    activeTemplates.value.find(t => t.id === props.session.template_id) || activeTemplates.value[0]
 );
 
 const isSubmitting = ref(false);
@@ -138,10 +143,28 @@ function handleBack() {
             </div>
 
             <!-- Templates Horizontal / Grid Container -->
-            <div class="flex-1 overflow-y-auto px-1 sm:px-2 py-2 sm:py-4 min-h-[220px]">
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 max-w-5xl mx-auto">
+            <div class="flex-1 overflow-y-auto px-1 sm:px-2 py-2 sm:py-4 min-h-[220px] flex flex-col justify-center">
+                <!-- JIKA TIDAK ADA TEMPLATE AKTIF -->
+                <div v-if="activeTemplates.length === 0" class="my-auto text-center py-12 px-6 bg-slate-900/80 rounded-3xl border border-white/10 p-8 max-w-lg mx-auto shadow-2xl">
+                    <div class="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-4 border border-amber-500/30">
+                        <Sparkles class="w-8 h-8" />
+                    </div>
+                    <h3 class="text-xl font-black text-white">Belum Ada Template Aktif</h3>
+                    <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                        Saat ini belum ada template foto yang diaktifkan oleh admin. Silakan aktifkan template foto di Panel Admin untuk melanjutkan.
+                    </p>
+                    <button
+                        @click="handleBack"
+                        class="mt-6 px-6 py-3 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition-all active:scale-95 cursor-pointer shadow-lg"
+                    >
+                        Kembali ke Layar Utama
+                    </button>
+                </div>
+
+                <!-- GRID TEMPLATE AKTIF -->
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 max-w-5xl mx-auto w-full">
                     <TemplateCard
-                        v-for="t in templates"
+                        v-for="t in activeTemplates"
                         :key="t.id"
                         :template="t"
                         :selected="selectedTemplate?.id === t.id"
@@ -151,7 +174,7 @@ function handleBack() {
             </div>
 
             <!-- Bottom Navigation Bar -->
-            <div class="pt-3 sm:pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0">
+            <div v-if="activeTemplates.length > 0" class="pt-3 sm:pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0">
                 <div class="flex items-center justify-between w-full sm:w-auto gap-3">
                     <button
                         @click="handleBack"

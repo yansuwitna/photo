@@ -118,6 +118,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/print-station/jobs', [PrintStationController::class, 'jobs']);
         Route::post('/print-station/toggle', [PrintStationController::class, 'toggle']);
         Route::post('/print-station/test', [PrintStationController::class, 'testPrint']);
+        Route::post('/print-station/select-printer', [PrintStationController::class, 'selectPrinter']);
+        Route::post('/print-station/sync-printers', [PrintStationController::class, 'syncPrinters']);
         Route::post('/print-station/jobs/{jobId}/reprint', [PrintStationController::class, 'reprint']);
         Route::post('/print-station/jobs/{jobId}/update', [PrintAgentController::class, 'updateJob']);
 

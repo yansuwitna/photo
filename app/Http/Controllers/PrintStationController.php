@@ -22,8 +22,9 @@ class PrintStationController extends Controller
         $selectedBooth = $request->query('booth', 'STAND-01');
 
         $printerManager = new PrinterManager();
-        $activePrinter = $printerManager->getPrinterModel();
-        $activePaperSize = $printerManager->getActivePaperSize();
+        $activePrinter = $printerManager->getPrinterForBooth($selectedBooth);
+        $activePaperSize = $printerManager->getActivePaperSize(null, $selectedBooth);
+        $printers = Printer::all();
 
         $todayJobsQuery = PrintJob::whereDate('created_at', today());
         $todayCompletedQuery = PrintJob::whereDate('created_at', today())->where('status', 'completed');
@@ -50,6 +51,7 @@ class PrintStationController extends Controller
         return Inertia::render('PrintStation/Index', [
             'active_printer' => $activePrinter,
             'active_paper_size' => $activePaperSize,
+            'printers' => $printers,
             'web_station_enabled' => true,
             'selected_booth' => $selectedBooth,
             'available_booths' => $availableBooths,
@@ -132,8 +134,9 @@ class PrintStationController extends Controller
             });
 
         $printerManager = new PrinterManager();
-        $activePrinter = $printerManager->getPrinterModel();
-        $activePaperSize = $printerManager->getActivePaperSize();
+        $activePrinter = $printerManager->getPrinterForBooth($booth);
+        $activePaperSize = $printerManager->getActivePaperSize(null, $booth);
+        $printers = Printer::all();
 
         return response()->json([
             'success' => true,
@@ -142,6 +145,7 @@ class PrintStationController extends Controller
             'recent_jobs' => $recentJobs,
             'active_printer' => $activePrinter,
             'active_paper_size' => $activePaperSize,
+            'printers' => $printers,
             'web_station_enabled' => (bool)Setting::get('web_print_station_enabled', true),
         ]);
     }
@@ -160,11 +164,71 @@ class PrintStationController extends Controller
         ]);
     }
 
+    public function selectPrinter(Request $request): JsonResponse
+    {
+        $boothId = $request->input('booth_id', 'STAND-01');
+        $printerId = (int)$request->input('printer_id');
+        $paperSize = $request->input('paper_size');
+
+        $printer = Printer::findOrFail($printerId);
+
+        if ($boothId && $boothId !== 'all') {
+            Setting::updateOrCreate(
+                ['key' => "booth_printer_{$boothId}"],
+                ['group' => 'hardware', 'value' => (string)$printerId, 'type' => 'integer', 'label' => "Printer untuk {$boothId}"]
+            );
+            if ($paperSize) {
+                Setting::updateOrCreate(
+                    ['key' => "booth_paper_size_{$boothId}"],
+                    ['group' => 'hardware', 'value' => (string)$paperSize, 'type' => 'string', 'label' => "Ukuran Kertas {$boothId}"]
+                );
+            }
+        } else {
+            Setting::updateOrCreate(
+                ['key' => 'active_printer_id'],
+                ['group' => 'hardware', 'value' => (string)$printerId, 'type' => 'integer', 'label' => 'ID Printer Aktif']
+            );
+            if ($paperSize) {
+                Setting::updateOrCreate(
+                    ['key' => 'active_printer_paper_size'],
+                    ['group' => 'hardware', 'value' => (string)$paperSize, 'type' => 'string', 'label' => 'Ukuran Kertas Printer Aktif']
+                );
+            }
+        }
+
+        $printerManager = new PrinterManager();
+        $activePrinter = $printerManager->getPrinterForBooth($boothId);
+        $activePaperSize = $printerManager->getActivePaperSize(null, $boothId);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Printer untuk {$boothId} berhasil diatur ke '{$printer->name}'.",
+            'active_printer' => $activePrinter,
+            'active_paper_size' => $activePaperSize,
+            'booth_id' => $boothId,
+        ]);
+    }
+
+    public function syncPrinters(): JsonResponse
+    {
+        try {
+            app(\App\Http\Controllers\Api\DeviceApiController::class)->autoSyncPrinters(true);
+        } catch (\Throwable $e) {}
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Daftar printer sistem operasi berhasil diperbarui.',
+            'printers' => Printer::all(),
+        ]);
+    }
+
     public function testPrint(Request $request): JsonResponse
     {
         $copies = (int)$request->input('copies', 1);
-        $paperSize = $request->input('paper_size') ?: (new PrinterManager())->getActivePaperSize();
-        $printer = (new PrinterManager())->getPrinterModel();
+        $boothId = $request->input('booth_id', 'STAND-01');
+        $printerManager = new PrinterManager();
+        $printer = $printerManager->getPrinterForBooth($boothId);
+        $paperSize = $request->input('paper_size') ?: $printerManager->getActivePaperSize(null, $boothId);
 
         // Pastikan dummy image test tersedia
         $testRelPath = 'tests/print_station_test.png';
@@ -193,8 +257,6 @@ class PrintStationController extends Controller
             imagepng($im, $fullPath);
             imagedestroy($im);
         }
-
-        $boothId = $request->input('booth_id', 'STAND-01');
 
         // Cari sesi dummy atau sesi terakhir untuk relasi
         $session = BoothSession::latest()->first();

@@ -36,6 +36,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     (e: 'retake', slotIndex: number): void;
+    (e: 'stream-ready', stream: MediaStream): void;
+    (e: 'camera-status', status: { hasStream: boolean; error: string | null; cameras: MediaDeviceInfo[] }): void;
 }>();
 
 // Video & Stream References
@@ -44,6 +46,10 @@ const activeVideoEl = ref<HTMLVideoElement | null>(null);
 const simulatedCanvasRef = ref<HTMLCanvasElement | null>(null);
 const mediaStream = ref<MediaStream | null>(null);
 const hasActiveStream = ref(false);
+const isConnectingCamera = ref(false);
+const cameraError = ref<string | null>(null);
+const availableCameras = ref<MediaDeviceInfo[]>([]);
+const selectedCameraId = ref<string>('');
 let animId: number | null = null;
 
 const templateWidth = computed(() => props.template?.width || 1200);
@@ -264,11 +270,34 @@ function setActiveVideoRef(el: any) {
     if (el) {
         activeVideoEl.value = el as HTMLVideoElement;
         if (mediaStream.value) {
-            if (el.srcObject !== mediaStream.value) {
-                el.srcObject = mediaStream.value;
+            if (activeVideoEl.value.srcObject !== mediaStream.value) {
+                activeVideoEl.value.srcObject = mediaStream.value;
             }
-            el.play().catch(() => {});
+            activeVideoEl.value.play().catch(() => {});
         }
+    }
+}
+
+watch(activeVideoEl, (newEl) => {
+    if (newEl && mediaStream.value) {
+        if (newEl.srcObject !== mediaStream.value) {
+            newEl.srcObject = mediaStream.value;
+        }
+        newEl.play().catch(() => {});
+    }
+});
+
+watch(mediaStream, async (stream) => {
+    if (stream) {
+        await nextTick();
+        attachStreamToVideo();
+    }
+});
+
+function onVideoLoaded(e: Event) {
+    const v = e.target as HTMLVideoElement;
+    if (v && v.paused) {
+        v.play().catch(() => {});
     }
 }
 
@@ -318,30 +347,150 @@ watch(
     }
 );
 
-async function initWebcam() {
-    stopCamera();
+async function refreshCameraList() {
     try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    facingMode: 'user',
-                },
-                audio: false,
-            });
-            mediaStream.value = stream;
-            hasActiveStream.value = true;
-
-            await nextTick();
-            attachStreamToVideo();
-            return;
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+            const allDevices = await navigator.mediaDevices.enumerateDevices();
+            const videoInputs = allDevices.filter((d) => d.kind === 'videoinput');
+            availableCameras.value = videoInputs;
+            if (!selectedCameraId.value && videoInputs.length > 0) {
+                selectedCameraId.value = videoInputs[0].deviceId;
+            }
         }
-    } catch (err) {
-        console.warn('Webcam tidak tersedia, menggunakan simulasi canvas studio.', err);
+    } catch (e) {
+        console.warn('Gagal membaca daftar perangkat kamera:', e);
     }
+}
+
+async function initWebcam(deviceId?: string) {
+    stopCamera();
+    isConnectingCamera.value = true;
+    cameraError.value = null;
+
+    if (typeof window !== 'undefined' && !window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP pada IP ${location.hostname}). Buka dengan https:// atau jalankan di localhost.`;
+        cameraError.value = msg;
+        isConnectingCamera.value = false;
+        hasActiveStream.value = false;
+        emit('camera-status', { hasStream: false, error: msg, cameras: [] });
+        runCanvasSimulation();
+        return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const msg = 'Browser ini tidak mendukung akses kamera (MediaDevices API tidak tersedia).';
+        cameraError.value = msg;
+        isConnectingCamera.value = false;
+        hasActiveStream.value = false;
+        emit('camera-status', { hasStream: false, error: msg, cameras: [] });
+        runCanvasSimulation();
+        return;
+    }
+
+    const targetDeviceId = deviceId || selectedCameraId.value;
+
+    // Progressive tiers: from high definition down to universal fallback
+    const constraintTiers: MediaStreamConstraints[] = [];
+
+    if (targetDeviceId) {
+        constraintTiers.push({
+            video: {
+                deviceId: { exact: targetDeviceId },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+            },
+            audio: false,
+        });
+        constraintTiers.push({
+            video: {
+                deviceId: { exact: targetDeviceId },
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+            },
+            audio: false,
+        });
+        constraintTiers.push({
+            video: {
+                deviceId: { exact: targetDeviceId },
+            },
+            audio: false,
+        });
+    }
+
+    // Standard progressive tiers without deviceId constraint
+    constraintTiers.push({
+        video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+        },
+        audio: false,
+    });
+    constraintTiers.push({
+        video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+        },
+        audio: false,
+    });
+    constraintTiers.push({
+        video: true,
+        audio: false,
+    });
+
+    let stream: MediaStream | null = null;
+    let lastError: any = null;
+
+    for (const constraints of constraintTiers) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (stream) break;
+        } catch (err: any) {
+            lastError = err;
+            console.warn('Tingkat constraint kamera gagal, mencoba alternatif berikutnya...', constraints, err);
+        }
+    }
+
+    isConnectingCamera.value = false;
+
+    if (stream) {
+        mediaStream.value = stream;
+        hasActiveStream.value = true;
+        cameraError.value = null;
+
+        await refreshCameraList();
+
+        emit('stream-ready', stream);
+        emit('camera-status', { hasStream: true, error: null, cameras: availableCameras.value });
+
+        await nextTick();
+        attachStreamToVideo();
+        return;
+    }
+
+    // Determine readable user-facing error message
     hasActiveStream.value = false;
+    let errMsg = 'Kamera tidak dapat diakses.';
+    if (lastError?.name === 'NotAllowedError' || lastError?.name === 'PermissionDeniedError') {
+        errMsg = 'Izin akses kamera ditolak. Silakan klik ikon gembok/kamera di address bar untuk mengizinkan akses.';
+    } else if (lastError?.name === 'NotFoundError' || lastError?.name === 'DevicesNotFoundError') {
+        errMsg = 'Perangkat kamera tidak ditemukan. Pastikan webcam terpasang.';
+    } else if (lastError?.name === 'NotReadableError' || lastError?.name === 'TrackStartError') {
+        errMsg = 'Kamera sedang digunakan aplikasi lain (OBS, Zoom, atau tab browser lain). Tutup aplikasi tersebut dan coba lagi.';
+    } else if (lastError?.name === 'OverconstrainedError') {
+        errMsg = 'Format resolusi kamera tidak didukung sensor.';
+    } else if (lastError?.message) {
+        errMsg = `Gagal membuka kamera: ${lastError.message}`;
+    }
+
+    cameraError.value = errMsg;
+    emit('camera-status', { hasStream: false, error: errMsg, cameras: availableCameras.value });
+    console.warn('Kamera fisik tidak dapat diakses:', errMsg, lastError);
     runCanvasSimulation();
+}
+
+async function switchCamera(deviceId: string) {
+    selectedCameraId.value = deviceId;
+    await initWebcam(deviceId);
 }
 
 function attachStreamToVideo() {
@@ -507,17 +656,26 @@ defineExpose({
     captureActiveSlot,
     hasActiveStream,
     initWebcam,
+    stopCamera,
+    mediaStream,
+    isConnectingCamera,
+    cameraError,
+    availableCameras,
+    selectedCameraId,
+    switchCamera,
+    activeVideoEl,
 });
 </script>
 
 <template>
-    <!-- Hidden Master Video Element for Instant Warm Capture -->
+    <!-- Master Video Element for Instant Warm Capture -->
     <video
         ref="masterVideoRef"
         autoplay
         playsinline
         muted
-        class="fixed -top-96 -left-96 w-1 h-1 opacity-0 pointer-events-none"
+        :muted="true"
+        class="fixed top-0 left-0 w-2 h-2 opacity-[0.01] pointer-events-none z-0"
     ></video>
 
     <!-- LIVE INTERACTIVE TEMPLATE CANVAS -->

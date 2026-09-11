@@ -99,61 +99,94 @@ const isPrintComplete = ref(false);
 const printCopies = ref(1);
 const showPaymentModal = ref(false);
 
+// Helper: cek apakah template adalah format Strip (2x6" / 600x1800 px)
+function isTemplateStrip(t?: Template | null): boolean {
+    if (!t) return false;
+    return t.paper_size === 'Strip 2x6' || t.width === 600 || t.frame_style === 'strip';
+}
+
 // -----------------------------------------------------------------------------
 // FILTER TEMPLATE AKTIF DARI DATABASE (Hanya yang is_active = true)
 // -----------------------------------------------------------------------------
-const activeAdminTemplates = computed(() => {
-    const all = props.templates || [];
-    return all.filter(t => {
-        // 1. Hanya template yang diaktifkan oleh admin saja
-        if (!t.is_active) return false;
+const allActiveTemplates = computed(() => {
+    return (props.templates || []).filter(t => Boolean(t.is_active));
+});
 
-        // 2. Cocokkan bentuk (Strip vs Full)
-        const isStrip = t.paper_size === 'Strip 2x6' || t.width === 600 || t.frame_style === 'strip';
+// Template aktif khusus format Strip
+const activeStripTemplates = computed(() => {
+    return allActiveTemplates.value.filter(t => isTemplateStrip(t));
+});
+
+// Template aktif khusus format Full 4R
+const activeFullTemplates = computed(() => {
+    return allActiveTemplates.value.filter(t => !isTemplateStrip(t));
+});
+
+// Apakah bentuk Strip / Full memiliki template aktif
+const hasActiveStrip = computed(() => activeStripTemplates.value.length > 0);
+const hasActiveFull = computed(() => activeFullTemplates.value.length > 0);
+const totalActiveTemplatesCount = computed(() => allActiveTemplates.value.length);
+
+// Ringkasan pilihan jumlah foto yang ada template aktifnya
+const activeStripCountsText = computed(() => {
+    const counts = Array.from(new Set(activeStripTemplates.value.map(t => Number(t.photo_count) || 3))).sort((a, b) => a - b);
+    return counts.length > 0 ? `${counts.join(', ')} Foto` : 'Tidak tersedia';
+});
+
+const activeFullCountsText = computed(() => {
+    const counts = Array.from(new Set(activeFullTemplates.value.map(t => Number(t.photo_count) || 3))).sort((a, b) => a - b);
+    return counts.length > 0 ? `${counts.join(', ')} Foto` : 'Tidak tersedia';
+});
+
+// Pilihan jumlah foto yang HANYA memiliki template aktif (jika tidak ada maka sembunyikan)
+const availableCountOptions = computed(() => {
+    const activeMatchingFormat = selectedFormat.value === 'strip' 
+        ? activeStripTemplates.value 
+        : activeFullTemplates.value;
+
+    if (activeMatchingFormat.length === 0) return [];
+
+    // Ambil semua photo_count unik yang benar-benar ada di template aktif
+    const uniqueCounts = Array.from(new Set(activeMatchingFormat.map(t => Number(t.photo_count) || 3))).sort((a, b) => a - b);
+
+    const descriptions: Record<number, { desc: string; badge?: string }> = {
+        1: { desc: 'Single Portrait Studio foto tunggal', badge: undefined },
+        2: { desc: selectedFormat.value === 'strip' ? '2 pose besar & leluasa' : 'Duet Atas-Bawah seimbang', badge: undefined },
+        3: { desc: 'Strip klasik paling populer', badge: 'Favorit' },
+        4: { desc: selectedFormat.value === 'strip' ? 'Format 4 pose estetik Life4Cuts' : 'Grid 2x2 seimbang & proporsional', badge: 'Favorit' },
+        6: { desc: '6 momen seru rame-rame', badge: undefined },
+    };
+
+    return uniqueCounts
+        .map(count => {
+            const matchingTemplates = activeMatchingFormat.filter(t => (Number(t.photo_count) || 3) === count);
+            const meta = descriptions[count] || { desc: `${count} pose dalam satu lembar`, badge: undefined };
+            return {
+                count,
+                name: `${count} Foto`,
+                description: meta.desc,
+                badge: meta.badge,
+                templateCount: matchingTemplates.length,
+            };
+        })
+        .filter(opt => opt.templateCount > 0); // SEMBUNYIKAN JIKA TIDAK ADA YANG AKTIF!
+});
+
+// Template buatan admin yang aktif sesuai bentuk & jumlah foto terpilih
+const activeAdminTemplates = computed(() => {
+    return allActiveTemplates.value.filter(t => {
+        // 1. Cocokkan bentuk (Strip vs Full)
+        const isStrip = isTemplateStrip(t);
         if (selectedFormat.value === 'strip' && !isStrip) return false;
         if (selectedFormat.value === 'full' && isStrip) return false;
 
-        // 3. Cocokkan jumlah foto
-        if (selectedPhotoCount.value && t.photo_count !== selectedPhotoCount.value) return false;
+        // 2. Cocokkan jumlah foto
+        if (selectedPhotoCount.value && (Number(t.photo_count) || 3) !== Number(selectedPhotoCount.value)) {
+            return false;
+        }
 
         return true;
     });
-});
-
-// Pilihan jumlah foto yang tersedia dari template aktif
-const availableCountOptions = computed(() => {
-    const all = props.templates || [];
-    const activeMatchingFormat = all.filter(t => {
-        if (!t.is_active) return false;
-        const isStrip = t.paper_size === 'Strip 2x6' || t.width === 600 || t.frame_style === 'strip';
-        return selectedFormat.value === 'strip' ? isStrip : !isStrip;
-    });
-
-    if (selectedFormat.value === 'strip') {
-        const counts = [2, 3, 4];
-        return counts.map(count => {
-            const matchingTemplates = activeMatchingFormat.filter(t => t.photo_count === count);
-            return {
-                count,
-                name: `${count} Foto`,
-                description: count === 3 ? 'Strip klasik paling populer' : (count === 4 ? 'Format 4 pose estetik Life4Cuts' : '2 pose besar & leluasa'),
-                badge: count === 3 ? 'Favorit' : (count === 4 ? 'Viral' : null),
-                templateCount: matchingTemplates.length,
-            };
-        });
-    } else {
-        const counts = [1, 2, 4, 6];
-        return counts.map(count => {
-            const matchingTemplates = activeMatchingFormat.filter(t => t.photo_count === count);
-            return {
-                count,
-                name: `${count} Foto`,
-                description: count === 4 ? 'Grid 2x2 seimbang & proporsional' : (count === 1 ? 'Single Portrait Studio' : (count === 2 ? 'Duet Atas-Bawah' : '6 Momen Seru')),
-                badge: count === 4 ? 'Favorit' : null,
-                templateCount: matchingTemplates.length,
-            };
-        });
-    }
 });
 
 function getNextAvailableSlot(): number {
@@ -164,14 +197,24 @@ function getNextAvailableSlot(): number {
 }
 
 onMounted(() => {
-    // Inisialisasi format awal berdasarkan template saat ini
-    if (props.template?.paper_size === 'Strip 2x6' || props.template?.frame_style === 'strip' || props.template?.width === 600) {
+    // Inisialisasi format awal berdasarkan bentuk yang memiliki template aktif
+    if (hasActiveStrip.value && !hasActiveFull.value) {
         selectedFormat.value = 'strip';
-    } else {
+    } else if (hasActiveFull.value && !hasActiveStrip.value) {
         selectedFormat.value = 'full';
+    } else if (props.template && isTemplateStrip(props.template)) {
+        selectedFormat.value = hasActiveStrip.value ? 'strip' : 'full';
+    } else {
+        selectedFormat.value = hasActiveFull.value ? 'full' : (hasActiveStrip.value ? 'strip' : 'full');
     }
 
-    if (props.template?.photo_count) {
+    // Inisialisasi jumlah foto awal yang benar-benar aktif
+    if (availableCountOptions.value.length > 0) {
+        const hasMatching = availableCountOptions.value.some(o => o.count === selectedPhotoCount.value);
+        if (!hasMatching) {
+            selectedPhotoCount.value = availableCountOptions.value[0].count;
+        }
+    } else if (props.template?.photo_count) {
         selectedPhotoCount.value = props.template.photo_count;
     }
 
@@ -203,8 +246,16 @@ onMounted(() => {
 // =============================================================================
 function handleSelectFormat(format: 'strip' | 'full') {
     selectedFormat.value = format;
-    // Default jumlah foto yang pas
-    selectedPhotoCount.value = format === 'strip' ? 3 : 4;
+    
+    // Auto-select jumlah foto pertama yang aktif untuk bentuk ini
+    const activeMatchingFormat = format === 'strip' ? activeStripTemplates.value : activeFullTemplates.value;
+    const availableCounts = Array.from(new Set(activeMatchingFormat.map(t => Number(t.photo_count) || 3))).sort((a, b) => a - b);
+    if (availableCounts.length > 0) {
+        selectedPhotoCount.value = availableCounts[0];
+    } else {
+        selectedPhotoCount.value = format === 'strip' ? 3 : 4;
+    }
+
     currentStep.value = 2; // Lanjut ke Langkah 2: Jumlah Foto
     audioStore.playBeep(880, 0.08, 'sine');
     audioStore.speakInstruction(
@@ -616,19 +667,56 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                     </p>
                 </div>
 
-                <!-- 2 Touchscreen Cards: Strip vs Full -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full max-w-3xl">
-                    <!-- CARD A: PHOTO STRIP (Setengah Kertas 4R) -->
+                <!-- KONDISI JIKA TIDAK ADA TEMPLATE AKTIF SAMA SEKALI -->
+                <div 
+                    v-if="totalActiveTemplatesCount === 0"
+                    class="my-auto text-center py-12 px-8 max-w-md mx-auto bg-white rounded-3xl border-2 border-dashed border-slate-200 shadow-xl"
+                >
+                    <div class="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                        <Layers class="w-8 h-8" />
+                    </div>
+                    <h3 class="text-xl font-black text-slate-900">Belum Ada Template Aktif</h3>
+                    <p class="text-xs text-slate-500 mt-2 leading-relaxed">
+                        Semua template foto booth saat ini sedang dinonaktifkan. Silakan aktifkan minimal satu template melalui Panel Admin untuk memulai sesi.
+                    </p>
+                    <div class="mt-6 flex flex-col gap-2.5">
+                        <button
+                            @click="router.visit('/')"
+                            class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all cursor-pointer"
+                        >
+                            Kembali ke Layar Utama
+                        </button>
+                        <a
+                            href="/admin/templates"
+                            class="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-xs border border-amber-500/30 transition-all text-center"
+                        >
+                            Buka Kelola Template di Admin
+                        </a>
+                    </div>
+                </div>
+
+                <!-- CARDS BENTUK (HANYA TAMPILKAN BENTUK YANG MEMILIKI TEMPLATE AKTIF) -->
+                <div 
+                    v-else
+                    :class="hasActiveStrip && hasActiveFull ? 'grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 w-full max-w-3xl' : 'flex justify-center w-full max-w-md mx-auto'"
+                >
+                    <!-- CARD A: PHOTO STRIP (Setengah Kertas 4R) - HANYA JIKA ADA TEMPLATE STRIP AKTIF -->
                     <button
+                        v-if="hasActiveStrip"
                         @click="handleSelectFormat('strip')"
-                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between"
+                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between cursor-pointer w-full"
                         :class="selectedFormat === 'strip' 
                             ? 'border-pink-500 ring-4 ring-pink-500/20 shadow-xl' 
                             : 'border-slate-200 hover:border-pink-300 shadow-md'"
                     >
-                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-50 text-pink-600 text-xs font-black self-start mb-4">
-                            <span>✨</span>
-                            <span>POPULER • BEAUTYPLUS & LIFE4CUTS</span>
+                        <div class="flex items-center justify-between gap-2 mb-4">
+                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-50 text-pink-600 text-xs font-black">
+                                <span>✨</span>
+                                <span>POPULER • BEAUTYPLUS</span>
+                            </div>
+                            <span class="px-2.5 py-0.5 rounded-full bg-pink-500/10 text-pink-600 text-[11px] font-black border border-pink-500/20">
+                                {{ activeStripTemplates.length }} Desain Aktif
+                            </span>
                         </div>
 
                         <!-- Miniature Strip Preview Visual -->
@@ -654,24 +742,30 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         </div>
 
                         <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                            <span class="text-xs font-bold text-slate-700">Pilihan: 2, 3, atau 4 Foto</span>
+                            <span class="text-xs font-bold text-slate-700">Pilihan: {{ activeStripCountsText }}</span>
                             <div class="w-10 h-10 rounded-2xl bg-pink-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
                                 <ArrowRight class="w-5 h-5 stroke-[2.5]" />
                             </div>
                         </div>
                     </button>
 
-                    <!-- CARD B: FULL PHOTO (Kertas 4R Utuh) -->
+                    <!-- CARD B: FULL PHOTO (Kertas 4R Utuh) - HANYA JIKA ADA TEMPLATE FULL AKTIF -->
                     <button
+                        v-if="hasActiveFull"
                         @click="handleSelectFormat('full')"
-                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between"
+                        class="group relative bg-white rounded-3xl p-6 md:p-8 border-2 text-left transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl flex flex-col justify-between cursor-pointer w-full"
                         :class="selectedFormat === 'full' 
                             ? 'border-pink-500 ring-4 ring-pink-500/20 shadow-xl' 
                             : 'border-slate-200 hover:border-pink-300 shadow-md'"
                     >
-                        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-black self-start mb-4">
-                            <span>⭐</span>
-                            <span>KLASIK STUDIO • LEGA & LUAS</span>
+                        <div class="flex items-center justify-between gap-2 mb-4">
+                            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-black">
+                                <span>⭐</span>
+                                <span>KLASIK STUDIO • LEGA & LUAS</span>
+                            </div>
+                            <span class="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 text-[11px] font-black border border-amber-500/20">
+                                {{ activeFullTemplates.length }} Desain Aktif
+                            </span>
                         </div>
 
                         <!-- Miniature Full 4R Preview Visual -->
@@ -697,7 +791,7 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         </div>
 
                         <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                            <span class="text-xs font-bold text-slate-700">Pilihan: 1, 2, 4, atau 6 Foto</span>
+                            <span class="text-xs font-bold text-slate-700">Pilihan: {{ activeFullCountsText }}</span>
                             <div class="w-10 h-10 rounded-2xl bg-slate-900 group-hover:bg-pink-500 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
                                 <ArrowRight class="w-5 h-5 stroke-[2.5]" />
                             </div>
@@ -716,7 +810,7 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                 <div class="w-full max-w-4xl flex items-center justify-between mb-6">
                     <button
                         @click="currentStep = 1"
-                        class="px-4 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                        class="px-4 py-2 rounded-2xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
                     >
                         <ChevronLeft class="w-4 h-4" />
                         <span>Ganti Bentuk</span>
@@ -737,13 +831,40 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                     <div class="w-24 hidden sm:block"></div>
                 </div>
 
-                <!-- CARDS GRID FOR PHOTO COUNT -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-4xl">
+                <!-- JIKA TIDAK ADA JUMLAH FOTO AKTIF UNTUK BENTUK INI -->
+                <div 
+                    v-if="availableCountOptions.length === 0" 
+                    class="my-auto text-center py-12 px-8 max-w-md mx-auto bg-white rounded-3xl border-2 border-dashed border-slate-200 shadow-xl"
+                >
+                    <div class="w-16 h-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
+                        <Layers class="w-8 h-8" />
+                    </div>
+                    <h3 class="text-lg font-black text-slate-800">Tidak Ada Template Aktif</h3>
+                    <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                        Tidak ditemukan template aktif untuk format {{ selectedFormat === 'strip' ? 'Photo Strip' : 'Full Photo' }}.
+                    </p>
+                    <button
+                        @click="currentStep = 1"
+                        class="mt-4 px-6 py-2.5 rounded-xl bg-pink-500 text-white text-xs font-bold shadow-md hover:bg-pink-600 transition-colors cursor-pointer"
+                    >
+                        Pilih Bentuk Lain
+                    </button>
+                </div>
+
+                <!-- CARDS GRID FOR PHOTO COUNT (HANYA YANG ADA TEMPLATE AKTIFNYA) -->
+                <div 
+                    v-else
+                    :class="[
+                        availableCountOptions.length === 1 ? 'flex justify-center w-full max-w-sm mx-auto' :
+                        availableCountOptions.length === 2 ? 'grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl mx-auto' :
+                        'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-4xl mx-auto'
+                    ]"
+                >
                     <button
                         v-for="opt in availableCountOptions"
                         :key="opt.count"
                         @click="handleSelectCount(opt.count)"
-                        class="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-pink-500 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col items-center text-center cursor-pointer"
+                        class="group bg-white rounded-3xl p-6 border-2 border-slate-200 hover:border-pink-500 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col items-center text-center cursor-pointer w-full"
                     >
                         <!-- Badge -->
                         <span 
@@ -782,7 +903,7 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         </p>
 
                         <!-- Info Template Aktif Tersedia -->
-                        <div class="mt-2 text-[11px] font-semibold text-pink-600">
+                        <div class="mt-2 text-[11px] font-semibold text-pink-600 bg-pink-50 px-3 py-1 rounded-full border border-pink-100">
                             {{ opt.templateCount }} Desain Template Tersedia
                         </div>
 

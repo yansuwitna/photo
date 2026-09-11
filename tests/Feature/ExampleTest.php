@@ -488,6 +488,166 @@ class ExampleTest extends TestCase
         $this->assertContains($job1->id, $allPendingIds);
         $this->assertContains($job2->id, $allPendingIds);
     }
+
+    public function test_kiosk_camera_and_template_select_only_return_active_templates(): void
+    {
+        $user = User::factory()->create();
+        $event = \App\Models\Event::create([
+            'name' => 'Template Filter Test',
+            'slug' => 'template-filter-test',
+            'is_active' => true,
+        ]);
+
+        $activeTemplate = \App\Models\Template::create([
+            'event_id' => $event->id,
+            'name' => 'Active Strip Template',
+            'slug' => 'active-strip-template',
+            'width' => 600,
+            'height' => 1800,
+            'paper_size' => 'Strip 2x6',
+            'photo_count' => 3,
+            'is_active' => true,
+        ]);
+
+        $inactiveTemplate = \App\Models\Template::create([
+            'event_id' => $event->id,
+            'name' => 'Inactive Full Template',
+            'slug' => 'inactive-full-template',
+            'width' => 1200,
+            'height' => 1800,
+            'paper_size' => '4R',
+            'photo_count' => 4,
+            'is_active' => false,
+        ]);
+
+        $session = \App\Models\BoothSession::create([
+            'session_code' => 'PB-TPL-01',
+            'event_id' => $event->id,
+            'template_id' => $activeTemplate->id,
+            'total_photos_required' => 3,
+            'photos_captured_count' => 0,
+            'status' => 'active',
+            'current_step' => 'camera',
+            'payment_status' => 'paid',
+        ]);
+
+        // Test /session/{id}/camera
+        $camRes = $this->actingAs($user)->get("/session/{$session->id}/camera");
+        $camRes->assertStatus(200);
+        $camRes->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->component('Kiosk/Camera')
+            ->where('templates', fn ($templates) => 
+                collect($templates)->pluck('id')->contains($activeTemplate->id) &&
+                !collect($templates)->pluck('id')->contains($inactiveTemplate->id)
+            )
+        );
+
+        // Test /session/{id}/template
+        $tplRes = $this->actingAs($user)->get("/session/{$session->id}/template");
+        $tplRes->assertStatus(200);
+        $tplRes->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->component('Kiosk/TemplateSelect')
+            ->where('templates', fn ($templates) => 
+                collect($templates)->pluck('id')->contains($activeTemplate->id) &&
+                !collect($templates)->pluck('id')->contains($inactiveTemplate->id)
+            )
+        );
+    }
+
+    public function test_print_station_per_booth_printer_selection(): void
+    {
+        $user = User::factory()->create();
+
+        $printerA = \App\Models\Printer::create([
+            'name' => 'Epson L1210 Stand 1',
+            'brand' => 'Epson',
+            'adapter' => 'windows',
+            'connection_type' => 'USB',
+            'default_paper_size' => 'Strip 2x6',
+        ]);
+
+        $printerB = \App\Models\Printer::create([
+            'name' => 'DNP DS-RX1HS Stand 2',
+            'brand' => 'DNP',
+            'adapter' => 'windows',
+            'connection_type' => 'USB',
+            'default_paper_size' => '4R',
+        ]);
+
+        // 1. Pilih Printer A untuk STAND-01
+        $resA = $this->actingAs($user)->postJson('/api/print-station/select-printer', [
+            'booth_id' => 'STAND-01',
+            'printer_id' => $printerA->id,
+            'paper_size' => 'Strip 2x6',
+        ]);
+        $resA->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'active_printer' => ['id' => $printerA->id],
+                'active_paper_size' => 'Strip 2x6',
+                'booth_id' => 'STAND-01',
+            ]);
+
+        // 2. Pilih Printer B untuk STAND-02
+        $resB = $this->actingAs($user)->postJson('/api/print-station/select-printer', [
+            'booth_id' => 'STAND-02',
+            'printer_id' => $printerB->id,
+            'paper_size' => '4R',
+        ]);
+        $resB->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'active_printer' => ['id' => $printerB->id],
+                'active_paper_size' => '4R',
+                'booth_id' => 'STAND-02',
+            ]);
+
+        // 3. Verifikasi API jobs untuk STAND-01 mengembalikan printer A
+        $jobsResA = $this->actingAs($user)->getJson('/api/print-station/jobs?booth=STAND-01');
+        $jobsResA->assertStatus(200);
+        $this->assertEquals($printerA->id, $jobsResA->json('active_printer.id'));
+        $this->assertEquals('Strip 2x6', $jobsResA->json('active_paper_size'));
+
+        // 4. Verifikasi API jobs untuk STAND-02 mengembalikan printer B
+        $jobsResB = $this->actingAs($user)->getJson('/api/print-station/jobs?booth=STAND-02');
+        $jobsResB->assertStatus(200);
+        $this->assertEquals($printerB->id, $jobsResB->json('active_printer.id'));
+        $this->assertEquals('4R', $jobsResB->json('active_paper_size'));
+
+        // 5. Verifikasi sesi baru di STAND-01 mengaitkan printer A
+        $sessionResA = $this->actingAs($user)->postJson('/api/session/start', [
+            'booth_id' => 'STAND-01',
+        ]);
+        $sessionResA->assertStatus(200);
+        $this->assertEquals($printerA->id, $sessionResA->json('session.printer_id'));
+
+        // 6. Verifikasi sesi baru di STAND-02 mengaitkan printer B
+        $sessionResB = $this->actingAs($user)->postJson('/api/session/start', [
+            'booth_id' => 'STAND-02',
+        ]);
+        $sessionResB->assertStatus(200);
+        $this->assertEquals($printerB->id, $sessionResB->json('session.printer_id'));
+
+        // 7. Uji Test Print dari STAND-01 menghasilkan job dengan printer A
+        $testPrintA = $this->actingAs($user)->postJson('/api/print-station/test', [
+            'booth_id' => 'STAND-01',
+        ]);
+        $testPrintA->assertStatus(200);
+        $jobAId = $testPrintA->json('job_id');
+        $jobA = \App\Models\PrintJob::find($jobAId);
+        $this->assertEquals($printerA->id, $jobA->printer_id);
+        $this->assertEquals('STAND-01', $jobA->booth_id);
+
+        // 8. Uji Test Print dari STAND-02 menghasilkan job dengan printer B
+        $testPrintB = $this->actingAs($user)->postJson('/api/print-station/test', [
+            'booth_id' => 'STAND-02',
+        ]);
+        $testPrintB->assertStatus(200);
+        $jobBId = $testPrintB->json('job_id');
+        $jobB = \App\Models\PrintJob::find($jobBId);
+        $this->assertEquals($printerB->id, $jobB->printer_id);
+        $this->assertEquals('STAND-02', $jobB->booth_id);
+    }
 }
 
 
