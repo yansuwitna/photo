@@ -1309,11 +1309,33 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                     :ref="setLargeVideoRef"
                                     autoplay
                                     playsinline
+                                    webkit-playsinline
                                     muted
                                     :muted="true"
                                     class="w-full h-full object-cover transition-transform duration-150"
                                     :class="{ '-scale-x-100': mirrorMode }"
                                 ></video>
+
+                                <!-- Offline / Permission Request Overlay -->
+                                <div 
+                                    v-if="!cameraStatus.hasStream" 
+                                    class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-15"
+                                >
+                                    <div class="w-16 h-16 rounded-3xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-4 border border-pink-500/20">
+                                        <Camera class="w-8 h-8" />
+                                    </div>
+                                    <h4 class="text-white font-black text-lg mb-1">Akses Kamera Diperlukan</h4>
+                                    <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                        {{ cameraStatus.error || 'Izinkan browser mengakses kamera Anda untuk memulai sesi photobooth.' }}
+                                    </p>
+                                    <button
+                                        @click="liveCanvasRef?.initWebcam()"
+                                        class="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-lg shadow-pink-500/30 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <Camera class="w-4 h-4" />
+                                        <span>Izinkan & Hubungkan Kamera</span>
+                                    </button>
+                                </div>
 
                                 <!-- Corner Brackets Overlay -->
                                 <div class="absolute inset-4 pointer-events-none z-10">
@@ -1359,7 +1381,7 @@ const activeSlotDimensionLabel = computed<string>(() => {
                             </div>
                         </div>
 
-                        <!-- Right: Live Template Canvas (Keeps stream continuous) -->
+                        <!-- Right: Live Template Canvas (Desktop) -->
                         <div class="w-auto h-full max-h-[72vh] flex items-center justify-center shrink-0">
                             <LiveTemplateCanvas
                                 ref="liveCanvasRef"
@@ -1388,13 +1410,35 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                 :ref="setLargeVideoRef"
                                 autoplay
                                 playsinline
+                                webkit-playsinline
                                 muted
                                 :muted="true"
                                 class="w-full h-full object-cover transition-transform duration-150"
                                 :class="{ '-scale-x-100': mirrorMode }"
                             ></video>
 
-                            <div class="absolute inset-3 pointer-events-none z-10">
+                            <!-- Offline / Permission Request Overlay for Mobile -->
+                            <div 
+                                v-if="!cameraStatus.hasStream" 
+                                class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-15"
+                            >
+                                    <div class="w-14 h-14 rounded-2xl bg-pink-500/10 text-pink-500 flex items-center justify-center mb-3 border border-pink-500/20">
+                                        <Camera class="w-7 h-7" />
+                                    </div>
+                                    <h4 class="text-white font-black text-base mb-1">Akses Kamera Diperlukan</h4>
+                                    <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                        {{ cameraStatus.error || 'Izinkan browser mengakses kamera smartphone / tablet Anda.' }}
+                                    </p>
+                                    <button
+                                        @click="liveCanvasRef?.initWebcam()"
+                                        class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        <Camera class="w-4 h-4" />
+                                        <span>Izinkan Kamera</span>
+                                    </button>
+                                </div>
+
+                                <div class="absolute inset-3 pointer-events-none z-10">
                                 <div class="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-amber-400"></div>
                                 <div class="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-amber-400"></div>
                                 <div class="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-amber-400"></div>
@@ -1430,7 +1474,21 @@ const activeSlotDimensionLabel = computed<string>(() => {
                             v-show="mobileTab === 'template'"
                             class="w-full h-full max-h-[72vh] flex items-center justify-center"
                         >
-                            <!-- LiveTemplateCanvas is also placed in the DOM to keep stream active -->
+                            <!-- LiveTemplateCanvas rendered here when in mobile template mode -->
+                            <LiveTemplateCanvas
+                                v-if="mobileTab === 'template'"
+                                :template="currentTemplate"
+                                :currentSlotIndex="currentSlotIndex"
+                                :capturedPhotos="capturedPhotosMap"
+                                :isCountingDown="isCountingDown"
+                                :countdown="countdown"
+                                :mirrorMode="mirrorMode"
+                                :isInteractiveReview="false"
+                                :isFlashingSlot="isFlashingSlot"
+                                @retake="handleRetake"
+                                @stream-ready="handleStreamReady"
+                                @camera-status="handleCameraStatus"
+                            />
                         </div>
                     </div>
 
@@ -1452,6 +1510,7 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                 :ref="setLargeVideoRef"
                                 autoplay
                                 playsinline
+                                webkit-playsinline
                                 muted
                                 :muted="true"
                                 class="w-full h-full object-cover transition-transform duration-150"

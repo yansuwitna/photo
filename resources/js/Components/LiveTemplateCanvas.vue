@@ -367,8 +367,9 @@ async function initWebcam(deviceId?: string) {
     isConnectingCamera.value = true;
     cameraError.value = null;
 
+    // Browser modern (terutama Safari di iPhone dan Chrome) mewajibkan Secure Context (HTTPS)
     if (typeof window !== 'undefined' && !window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP pada IP ${location.hostname}). Buka dengan https:// atau jalankan di localhost.`;
+        const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP pada ${location.hostname}). iPhone/Safari dan browser modern WAJIB menggunakan https:// untuk mengizinkan kamera.`;
         cameraError.value = msg;
         isConnectingCamera.value = false;
         hasActiveStream.value = false;
@@ -378,7 +379,7 @@ async function initWebcam(deviceId?: string) {
     }
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        const msg = 'Browser ini tidak mendukung akses kamera (MediaDevices API tidak tersedia).';
+        const msg = 'Browser ini tidak mendukung akses kamera (MediaDevices API tidak tersedia). Pastikan menggunakan browser modern seperti Safari di iOS atau Chrome di Android.';
         cameraError.value = msg;
         isConnectingCamera.value = false;
         hasActiveStream.value = false;
@@ -389,7 +390,7 @@ async function initWebcam(deviceId?: string) {
 
     const targetDeviceId = deviceId || selectedCameraId.value;
 
-    // Progressive tiers: from high definition down to universal fallback
+    // Progressive tiers: dari target device, lalu facingMode (penting untuk iPhone/Android), lalu universal fallback
     const constraintTiers: MediaStreamConstraints[] = [];
 
     if (targetDeviceId) {
@@ -417,14 +418,31 @@ async function initWebcam(deviceId?: string) {
         });
     }
 
-    // Standard progressive tiers without deviceId constraint
+    // Tiers untuk mobile/iPhone: coba kamera depan dulu (user) lalu lingkungan (environment)
     constraintTiers.push({
         video: {
+            facingMode: 'user',
             width: { ideal: 1920 },
             height: { ideal: 1080 },
         },
         audio: false,
     });
+    constraintTiers.push({
+        video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+        },
+        audio: false,
+    });
+    constraintTiers.push({
+        video: {
+            facingMode: 'user',
+        },
+        audio: false,
+    });
+
+    // Standard progressive tiers fallback
     constraintTiers.push({
         video: {
             width: { ideal: 1280 },
@@ -673,6 +691,7 @@ defineExpose({
         ref="masterVideoRef"
         autoplay
         playsinline
+        webkit-playsinline
         muted
         :muted="true"
         class="fixed top-0 left-0 w-2 h-2 opacity-[0.01] pointer-events-none z-0"
@@ -752,6 +771,7 @@ defineExpose({
                             :ref="setActiveVideoRef"
                             autoplay
                             playsinline
+                            webkit-playsinline
                             muted
                             :muted="true"
                             class="w-full h-full object-cover transition-transform duration-150"
