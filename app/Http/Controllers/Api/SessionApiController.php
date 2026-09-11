@@ -145,7 +145,7 @@ class SessionApiController extends Controller
             $result['session'] = $session->fresh()->load(['event', 'template', 'photos', 'finalPhotos']);
             return response()->json($result);
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error("Compose error: " . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error("Compose error: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menyusun template foto: ' . $e->getMessage(),

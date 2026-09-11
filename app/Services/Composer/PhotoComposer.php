@@ -127,26 +127,27 @@ class PhotoComposer
         // Simpan hasil render
         $eventSlug = $session->event ? $session->event->slug : 'default';
         $finalRelDir = "events/{$eventSlug}/sessions/{$session->id}/final";
-        Storage::disk('public')->makeDirectory($finalRelDir);
-
         $thumbRelDir = "events/{$eventSlug}/sessions/{$session->id}/thumbnails";
-        Storage::disk('public')->makeDirectory($thumbRelDir);
 
         $shortId = substr(strtoupper(str_replace('-', '', $session->id)), 0, 8);
         $finalFilename = "{$shortId}_FINAL.jpg";
         $finalRelPath = "{$finalRelDir}/{$finalFilename}";
         $finalFullPath = Storage::disk('public')->path($finalRelPath);
 
-        imagejpeg($canvas, $finalFullPath, 95);
-
-        // Thumbnail
         $thumbFilename = "{$shortId}_FINAL_THUMB.jpg";
         $thumbRelPath = "{$thumbRelDir}/{$thumbFilename}";
         $thumbFullPath = Storage::disk('public')->path($thumbRelPath);
 
+        // Pastikan direktori tujuan tersedia dan writable
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($finalFullPath), 0775, true);
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname($thumbFullPath), 0775, true);
+
+        imagejpeg($canvas, $finalFullPath, 95);
+
+        // Thumbnail
         $thumbW = 480;
-        $thumbH = (int)($height * ($thumbW / $width));
-        $thumbImg = imagecreatetruecolor($thumbW, $thumbH);
+        $thumbH = (int)($height * ($thumbW / max(1, $width)));
+        $thumbImg = imagecreatetruecolor($thumbW, max(1, $thumbH));
         imagecopyresampled($thumbImg, $canvas, 0, 0, 0, 0, $thumbW, $thumbH, $width, $height);
         imagejpeg($thumbImg, $thumbFullPath, 85);
         imagedestroy($thumbImg);
@@ -419,14 +420,11 @@ class PhotoComposer
         $color = $this->hexToColor($canvas, $el->font_color ?: '#111827');
 
         // Gunakan TrueType Font jika tersedia di sistem untuk kualitas teks tajam 300 DPI
-        $fontFile = 'C:/Windows/Fonts/arialbd.ttf';
-        if (!file_exists($fontFile)) {
-            $fontFile = 'C:/Windows/Fonts/arial.ttf';
-        }
+        $fontFile = $this->getSystemFontFile(true);
 
         $fontSize = (int)round(($el->font_size ?: 24) * ($canvasWidth / 1200));
 
-        if (file_exists($fontFile) && function_exists('imagettfbbox')) {
+        if ($fontFile && file_exists($fontFile) && function_exists('imagettfbbox')) {
             $bbox = imagettfbbox($fontSize, 0, $fontFile, $text);
             $textWidth = abs($bbox[2] - $bbox[0]);
             $textHeight = abs($bbox[7] - $bbox[1]);
@@ -553,10 +551,7 @@ class PhotoComposer
      */
     protected function drawStickerOnCanvas($canvas, array $sticker, int $width, int $height): void
     {
-        $fontFile = 'C:/Windows/Fonts/arialbd.ttf';
-        if (!file_exists($fontFile)) {
-            $fontFile = 'C:/Windows/Fonts/arial.ttf';
-        }
+        $fontFile = $this->getSystemFontFile(true);
 
         if (($sticker['id'] ?? '') === 'pink_bows') {
             $this->drawPinkBowsThemeDecorations($canvas, $width, $height);
@@ -594,7 +589,7 @@ class PhotoComposer
             $sub = $sticker['badgeSubtext'] ?? '';
             $textCol = $this->hexToColor($badgeCanvas, $sticker['color'] ?? '#ffffff');
 
-            if (file_exists($fontFile) && function_exists('imagettfbbox')) {
+            if ($fontFile && file_exists($fontFile) && function_exists('imagettfbbox')) {
                 $bbox = imagettfbbox(14, 0, $fontFile, $title);
                 $tw = abs($bbox[2] - $bbox[0]);
                 $tx = (int)(($stampW - $tw) / 2);
@@ -639,6 +634,35 @@ class PhotoComposer
             imagecopy($canvas, $badgeCanvas, $stampX, $stampY, 0, 0, $stampSize, $stampSize);
             imagedestroy($badgeCanvas);
         }
+    }
+
+    /**
+     * Cari path font TrueType yang tersedia di sistem Linux maupun Windows
+     */
+    protected function getSystemFontFile(bool $bold = false): ?string
+    {
+        $candidates = $bold
+            ? [
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+                '/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf',
+                'C:/Windows/Fonts/arialbd.ttf',
+                'C:/Windows/Fonts/arial.ttf',
+            ]
+            : [
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+                '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+                '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+                'C:/Windows/Fonts/arial.ttf',
+            ];
+
+        foreach ($candidates as $c) {
+            if (file_exists($c)) {
+                return $c;
+            }
+        }
+
+        return null;
     }
 
     /**
