@@ -59,6 +59,7 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const mirrorMode = ref(true);
 const hasActiveStream = ref(false);
+const cameraError = ref<string | null>(null);
 
 let mediaStream: MediaStream | null = null;
 let countdownInterval: any = null;
@@ -203,39 +204,78 @@ function setVideoRef(el: any) {
 // Camera initialization
 async function initCamera() {
     stopCameraStream();
-    try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            const constraintTiers: MediaStreamConstraints[] = [
-                { video: { width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
-                { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-                { video: true, audio: false }
-            ];
+    cameraError.value = null;
 
-            let stream: MediaStream | null = null;
-            for (const constraints of constraintTiers) {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    if (stream) break;
-                } catch (e) {}
-            }
-
-            if (stream) {
-                mediaStream = stream;
-                if (videoRef.value) {
-                    videoRef.value.srcObject = mediaStream;
-                    await videoRef.value.play();
-                }
-                hasActiveStream.value = true;
-                return;
-            }
-        }
-    } catch (err) {
-        console.warn('Webcam tidak tersedia, menggunakan simulasi studio photobooth.', err);
+    // Pengecekan HTTPS — wajib untuk iPhone (Safari) dan browser modern di Android/VPS
+    if (
+        typeof window !== 'undefined' &&
+        !window.isSecureContext &&
+        location.hostname !== 'localhost' &&
+        location.hostname !== '127.0.0.1'
+    ) {
+        const msg = `Akses kamera diblokir karena koneksi tidak aman (HTTP). Gunakan https:// untuk mengizinkan kamera di iPhone / Android.`;
+        cameraError.value = msg;
+        hasActiveStream.value = false;
+        runStudioSimulation();
+        return;
     }
 
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        cameraError.value = 'Browser tidak mendukung akses kamera. Gunakan Safari (iOS) atau Chrome (Android) versi terbaru.';
+        hasActiveStream.value = false;
+        runStudioSimulation();
+        return;
+    }
+
+    // Constraint tiers: prioritaskan facingMode untuk HP/iPhone, lalu fallback universal
+    const constraintTiers: MediaStreamConstraints[] = [
+        { video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+        { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: 'user' }, audio: false },
+        { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: true, audio: false },
+    ];
+
+    let stream: MediaStream | null = null;
+    let lastError: any = null;
+    for (const constraints of constraintTiers) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            if (stream) break;
+        } catch (e: any) {
+            lastError = e;
+        }
+    }
+
+    if (stream) {
+        mediaStream = stream;
+        if (videoRef.value) {
+            videoRef.value.srcObject = mediaStream;
+            await videoRef.value.play();
+        }
+        hasActiveStream.value = true;
+        cameraError.value = null;
+        return;
+    }
+
+    // Tampilkan error informatif
+    if (lastError?.name === 'NotAllowedError' || lastError?.name === 'PermissionDeniedError') {
+        cameraError.value = 'Izin kamera ditolak. Ketuk ikon kamera / gembok di address bar browser lalu pilih "Izinkan".';
+    } else if (lastError?.name === 'NotFoundError' || lastError?.name === 'DevicesNotFoundError') {
+        cameraError.value = 'Kamera tidak ditemukan di perangkat ini.';
+    } else if (lastError?.name === 'NotReadableError' || lastError?.name === 'TrackStartError') {
+        cameraError.value = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi tersebut lalu muat ulang halaman.';
+    } else if (lastError) {
+        cameraError.value = `Gagal membuka kamera: ${lastError.message || lastError.name || 'Error tidak diketahui'}`;
+    } else {
+        cameraError.value = 'Kamera tidak dapat diakses.';
+    }
+
+    console.warn('Webcam tidak tersedia, menggunakan simulasi studio photobooth.', lastError);
     hasActiveStream.value = false;
     runStudioSimulation();
 }
+
 
 function stopCameraStream() {
     if (mediaStream) {
@@ -603,6 +643,24 @@ function handleCompose() {
                                 class="w-full h-full object-cover"
                                 :class="{ '-scale-x-100': mirrorMode }"
                             ></canvas>
+
+                            <!-- CAMERA ERROR BANNER — tampil jika kamera gagal diakses -->
+                            <div
+                                v-if="cameraError && !hasActiveStream"
+                                class="absolute bottom-2 inset-x-2 z-40 flex items-start gap-2 bg-red-950/90 border border-red-500/50 text-red-200 text-[10px] rounded-lg px-3 py-2 shadow-xl backdrop-blur-sm"
+                            >
+                                <span class="text-red-400 shrink-0">⚠️</span>
+                                <div>
+                                    <p class="font-bold text-red-300 mb-0.5 text-xs">Kamera Tidak Dapat Diakses</p>
+                                    <p class="leading-relaxed">{{ cameraError }}</p>
+                                    <button
+                                        @click="initCamera"
+                                        class="mt-1.5 px-2.5 py-1 rounded-md bg-red-500/30 hover:bg-red-500/50 border border-red-500/40 text-red-200 font-semibold transition-all text-[10px]"
+                                    >
+                                        🔄 Coba Lagi
+                                    </button>
+                                </div>
+                            </div>
 
                             <!-- PRO VIEWFINDER CORNER BRACKETS [ ] ON ACTUAL FRAME CORNERS -->
                             <div class="absolute inset-2.5 pointer-events-none z-10">

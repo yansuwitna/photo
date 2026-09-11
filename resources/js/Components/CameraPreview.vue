@@ -63,6 +63,7 @@ const camera = computed(() => deviceStore.camera);
 const facingMode = ref<'user' | 'environment'>('user');
 const isFlashActive = ref(false);
 const hasActiveStream = ref(false);
+const cameraError = ref<string | null>(null);
 
 let stream: MediaStream | null = null;
 let animationId: number | null = null;
@@ -77,35 +78,77 @@ onUnmounted(() => {
 
 async function initWebcamOrSimulated() {
     stopCameraStream();
+    cameraError.value = null;
+
+    // Pengecekan HTTPS — wajib untuk iPhone (Safari) dan browser modern di Android/VPS
+    if (
+        typeof window !== 'undefined' &&
+        !window.isSecureContext &&
+        location.hostname !== 'localhost' &&
+        location.hostname !== '127.0.0.1'
+    ) {
+        const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP). Buka via https:// untuk mengizinkan kamera di iPhone / Android.`;
+        cameraError.value = msg;
+        hasActiveStream.value = false;
+        runCanvasSimulation();
+        return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        cameraError.value = 'Browser tidak mendukung akses kamera. Gunakan Safari (iOS) atau Chrome (Android) versi terbaru.';
+        hasActiveStream.value = false;
+        runCanvasSimulation();
+        return;
+    }
+
     try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            const constraintTiers: MediaStreamConstraints[] = [
-                { video: { width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
-                { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-                { video: true, audio: false }
-            ];
+        // Constraint tiers: prioritaskan facingMode untuk HP/iPhone, lalu fallback universal
+        const constraintTiers: MediaStreamConstraints[] = [
+            { video: { facingMode: facingMode.value, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
+            { video: { facingMode: facingMode.value, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+            { video: { facingMode: facingMode.value }, audio: false },
+            { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+            { video: true, audio: false },
+        ];
 
-            let activeStream: MediaStream | null = null;
-            for (const constraints of constraintTiers) {
-                try {
-                    activeStream = await navigator.mediaDevices.getUserMedia(constraints);
-                    if (activeStream) break;
-                } catch (e) {}
-            }
-
-            if (activeStream) {
-                stream = activeStream;
-                if (videoRef.value) {
-                    videoRef.value.srcObject = stream;
-                    await videoRef.value.play();
-                    hasActiveStream.value = true;
-                    return;
-                }
+        let activeStream: MediaStream | null = null;
+        let lastError: any = null;
+        for (const constraints of constraintTiers) {
+            try {
+                activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+                if (activeStream) break;
+            } catch (e: any) {
+                lastError = e;
             }
         }
-    } catch (err) {
-        console.info('Menggunakan simulasi studio photobooth canvas.', err);
+
+        if (activeStream) {
+            stream = activeStream;
+            if (videoRef.value) {
+                videoRef.value.srcObject = stream;
+                await videoRef.value.play();
+                hasActiveStream.value = true;
+                cameraError.value = null;
+                return;
+            }
+        }
+
+        // Tampilkan error yang informatif berdasarkan jenis kesalahan
+        if (lastError?.name === 'NotAllowedError' || lastError?.name === 'PermissionDeniedError') {
+            cameraError.value = 'Izin kamera ditolak. Ketuk ikon kamera / gembok di address bar browser lalu pilih "Izinkan".';
+        } else if (lastError?.name === 'NotFoundError' || lastError?.name === 'DevicesNotFoundError') {
+            cameraError.value = 'Kamera tidak ditemukan di perangkat ini.';
+        } else if (lastError?.name === 'NotReadableError' || lastError?.name === 'TrackStartError') {
+            cameraError.value = 'Kamera sedang digunakan aplikasi lain. Tutup aplikasi tersebut lalu muat ulang halaman.';
+        } else if (lastError) {
+            cameraError.value = `Gagal membuka kamera: ${lastError.message || lastError.name || 'Error tidak diketahui'}`;
+        }
+
+    } catch (err: any) {
+        cameraError.value = `Gagal membuka kamera: ${err?.message || 'Error tidak diketahui'}`;
+        console.warn('Camera init error:', err);
     }
+
     hasActiveStream.value = false;
     runCanvasSimulation();
 }
@@ -368,6 +411,24 @@ defineExpose({
                     filter: activeFilter.cssFilter !== 'none' ? `${activeFilter.cssFilter} brightness(${brightness}%)` : `brightness(${brightness}%)`
                 }"
             ></canvas>
+
+            <!-- CAMERA ERROR BANNER — tampil jika kamera gagal diakses -->
+            <div
+                v-if="cameraError && !hasActiveStream"
+                class="absolute bottom-24 inset-x-4 z-40 flex items-start gap-3 bg-red-950/90 border border-red-500/50 text-red-200 text-xs rounded-xl px-4 py-3 shadow-2xl backdrop-blur-sm"
+            >
+                <span class="text-red-400 text-base shrink-0">⚠️</span>
+                <div>
+                    <p class="font-bold text-red-300 mb-0.5">Kamera Tidak Dapat Diakses</p>
+                    <p class="leading-relaxed">{{ cameraError }}</p>
+                    <button
+                        @click="initWebcamOrSimulated"
+                        class="mt-2 px-3 py-1 rounded-lg bg-red-500/30 hover:bg-red-500/50 border border-red-500/40 text-red-200 font-semibold transition-all text-xs"
+                    >
+                        🔄 Coba Lagi
+                    </button>
+                </div>
+            </div>
 
             <!-- RULE OF THIRDS GRID OVERLAY -->
             <div v-if="showGrid" class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none z-10 border border-white/10">
