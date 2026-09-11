@@ -1330,15 +1330,35 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                     <Camera class="w-8 h-8" />
                                 </div>
                                 <h4 class="text-white font-black text-lg mb-1">Akses Kamera Diperlukan</h4>
-                                <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                <p class="text-slate-400 text-xs max-w-xs mb-2 leading-relaxed">
                                     {{ cameraStatus.error || 'Izinkan browser mengakses kamera Anda untuk memulai sesi photobooth.' }}
                                 </p>
+                                <!-- Petunjuk spesifik berdasarkan jenis error -->
+                                <div
+                                    v-if="cameraStatus.error && cameraStatus.error.includes('HTTP')"
+                                    class="mb-4 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] max-w-xs"
+                                >
+                                    🔒 Buka via <strong>https://</strong> bukan http:// — kamera wajib HTTPS di iPhone &amp; Android
+                                </div>
+                                <div
+                                    v-else-if="cameraStatus.error && (cameraStatus.error.includes('ditolak') || cameraStatus.error.includes('Izin'))"
+                                    class="mb-4 px-3 py-2 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] max-w-xs"
+                                >
+                                    📍 Ketuk ikon 🔒 di address bar → pilih <strong>Izinkan Kamera</strong> → tekan tombol di bawah
+                                </div>
+                                <div
+                                    v-else-if="cameraStatus.error && cameraStatus.error.includes('digunakan')"
+                                    class="mb-4 px-3 py-2 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-300 text-[11px] max-w-xs"
+                                >
+                                    📷 Tutup aplikasi lain yang memakai kamera (Zoom, Meet, dll) lalu tekan tombol di bawah
+                                </div>
+                                <div v-else class="mb-4"></div>
                                 <button
                                     @click="liveCanvasRef?.initWebcam()"
                                     class="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-lg shadow-pink-500/30 flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                                 >
                                     <Camera class="w-4 h-4" />
-                                    <span>Izinkan & Hubungkan Kamera</span>
+                                    <span>Izinkan &amp; Hubungkan Kamera</span>
                                 </button>
                             </div>
 
@@ -1438,9 +1458,23 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                     <Camera class="w-7 h-7" />
                                 </div>
                                 <h4 class="text-white font-black text-base mb-1">Akses Kamera Diperlukan</h4>
-                                <p class="text-slate-400 text-xs max-w-xs mb-4 leading-relaxed">
+                                <p class="text-slate-400 text-xs max-w-xs mb-2 leading-relaxed">
                                     {{ cameraStatus.error || 'Izinkan browser mengakses kamera smartphone / tablet Anda.' }}
                                 </p>
+                                <!-- Petunjuk spesifik berdasarkan jenis error (mobile) -->
+                                <div
+                                    v-if="cameraStatus.error && cameraStatus.error.includes('HTTP')"
+                                    class="mb-3 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] max-w-xs"
+                                >
+                                    🔒 Buka via <strong>https://</strong> — kamera wajib HTTPS di iPhone &amp; Android
+                                </div>
+                                <div
+                                    v-else-if="cameraStatus.error && (cameraStatus.error.includes('ditolak') || cameraStatus.error.includes('Izin'))"
+                                    class="mb-3 px-3 py-2 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] max-w-xs"
+                                >
+                                    📍 Ketuk 🔒 di address bar → <strong>Izinkan Kamera</strong> → tekan tombol di bawah
+                                </div>
+                                <div v-else class="mb-3"></div>
                                 <button
                                     @click="liveCanvasRef?.initWebcam()"
                                     class="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"

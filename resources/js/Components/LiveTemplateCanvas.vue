@@ -323,11 +323,41 @@ const canvasBackground = computed(() => {
 
 onMounted(async () => {
     await initWebcam();
+
+    // Auto-retry kamera saat user kembali ke tab (setelah mengizinkan akses di settings)
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Gunakan Permissions API untuk auto-reconnect saat izin kamera berubah menjadi 'granted'
+    if (typeof navigator !== 'undefined' && navigator.permissions) {
+        try {
+            const permStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+            permStatus.addEventListener('change', () => {
+                if (permStatus.state === 'granted' && !hasActiveStream.value) {
+                    initWebcam();
+                }
+            });
+        } catch (e) {
+            // Permissions API tidak tersedia di semua browser — ini opsional
+        }
+    }
 });
 
 onUnmounted(() => {
     stopCamera();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
+
+function handleVisibilityChange() {
+    if (document.visibilityState === 'visible' && !hasActiveStream.value && !isConnectingCamera.value) {
+        // Delay kecil untuk memastikan browser sudah siap setelah kembali ke tab
+        setTimeout(() => {
+            if (!hasActiveStream.value) {
+                initWebcam();
+            }
+        }, 500);
+    }
+}
+
 
 watch(
     () => props.currentSlotIndex,
