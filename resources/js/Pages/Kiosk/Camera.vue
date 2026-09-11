@@ -105,16 +105,20 @@ const cameraStatus = ref<{ hasStream: boolean; error: string | null; cameras: Me
 const viewMode = ref<'dual' | 'template' | 'viewfinder'>('dual');
 const mobileTab = ref<'viewfinder' | 'template'>('viewfinder');
 const selectedCameraId = ref<string>('');
+// Video elements set (mendukung desktop & mobile sekaligus tanpa saling menimpa ref)
+const videoElements = new Set<HTMLVideoElement>();
 const largeVideoRef = ref<HTMLVideoElement | null>(null);
 
 function handleStreamReady(stream: MediaStream) {
     liveStream.value = stream;
     cameraStatus.value.hasStream = true;
     cameraStatus.value.error = null;
-    if (largeVideoRef.value && largeVideoRef.value.srcObject !== stream) {
-        largeVideoRef.value.srcObject = stream;
-        largeVideoRef.value.play().catch(() => {});
-    }
+    videoElements.forEach((videoEl) => {
+        if (videoEl.srcObject !== stream) {
+            videoEl.srcObject = stream;
+        }
+        videoEl.play().catch(() => {});
+    });
 }
 
 function handleCameraStatus(status: { hasStream: boolean; error: string | null; cameras: MediaDeviceInfo[] }) {
@@ -130,22 +134,26 @@ function handleSwitchCamera(deviceId: string) {
 
 function setLargeVideoRef(el: any) {
     if (el) {
-        largeVideoRef.value = el as HTMLVideoElement;
+        const video = el as HTMLVideoElement;
+        videoElements.add(video);
+        largeVideoRef.value = video;
         if (liveStream.value) {
-            if (largeVideoRef.value.srcObject !== liveStream.value) {
-                largeVideoRef.value.srcObject = liveStream.value;
+            if (video.srcObject !== liveStream.value) {
+                video.srcObject = liveStream.value;
             }
-            largeVideoRef.value.play().catch(() => {});
+            video.play().catch(() => {});
         }
     }
 }
 
-watch([liveStream, largeVideoRef], ([stream, el]) => {
-    if (el && stream) {
-        if (el.srcObject !== stream) {
-            el.srcObject = stream;
-        }
-        el.play().catch(() => {});
+watch(liveStream, (stream) => {
+    if (stream) {
+        videoElements.forEach((videoEl) => {
+            if (videoEl.srcObject !== stream) {
+                videoEl.srcObject = stream;
+            }
+            videoEl.play().catch(() => {});
+        });
     }
 });
 

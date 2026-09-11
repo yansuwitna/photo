@@ -398,26 +398,24 @@ async function initWebcam(deviceId?: string) {
     isConnectingCamera.value = true;
     cameraError.value = null;
 
-    // Browser modern (terutama Safari di iPhone dan Chrome) mewajibkan Secure Context (HTTPS)
-    // Catatan: window.isSecureContext bisa false di belakang Cloudflare/reverse proxy meski URL https://
-    // Maka kita juga cek location.protocol sebagai fallback
-    const isSecure =
-        location.protocol === 'https:' ||
-        window.isSecureContext ||
-        location.hostname === 'localhost' ||
-        location.hostname === '127.0.0.1';
-    if (typeof window !== 'undefined' && !isSecure) {
-        const msg = `Akses kamera diblokir browser karena koneksi tidak aman (HTTP pada ${location.hostname}). iPhone/Safari dan browser modern WAJIB menggunakan https:// untuk mengizinkan kamera.`;
-        cameraError.value = msg;
-        isConnectingCamera.value = false;
-        hasActiveStream.value = false;
-        emit('camera-status', { hasStream: false, error: msg, cameras: [] });
-        runCanvasSimulation();
-        return;
-    }
+    // Helper pendeteksi ketersediaan API getUserMedia (termasuk browser lama/legacy)
+    const nav = typeof navigator !== 'undefined' ? (navigator as any) : null;
+    const hasMediaDevices = Boolean(nav && nav.mediaDevices && nav.mediaDevices.getUserMedia);
+    const hasLegacyGetUserMedia = Boolean(nav && (nav.getUserMedia || nav.webkitGetUserMedia || nav.mozGetUserMedia || nav.msGetUserMedia));
 
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        const msg = 'Browser ini tidak mendukung akses kamera (MediaDevices API tidak tersedia). Pastikan menggunakan browser modern seperti Safari di iOS atau Chrome di Android.';
+    if (!hasMediaDevices && !hasLegacyGetUserMedia) {
+        // Cek jika diblokir karena HTTP di luar localhost
+        if (typeof window !== 'undefined' && location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+            const msg = 'Kamera memerlukan koneksi aman (HTTPS). Silakan buka dengan https://';
+            cameraError.value = msg;
+            isConnectingCamera.value = false;
+            hasActiveStream.value = false;
+            emit('camera-status', { hasStream: false, error: msg, cameras: [] });
+            runCanvasSimulation();
+            return;
+        }
+
+        const msg = 'Browser tidak mendukung akses kamera. Gunakan browser modern (Chrome, Safari, Edge, Firefox).';
         cameraError.value = msg;
         isConnectingCamera.value = false;
         hasActiveStream.value = false;
@@ -496,9 +494,28 @@ async function initWebcam(deviceId?: string) {
     let stream: MediaStream | null = null;
     let lastError: any = null;
 
+    // Universal getUserMedia caller
+    const requestUserMedia = async (c: MediaStreamConstraints): Promise<MediaStream> => {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            return await navigator.mediaDevices.getUserMedia(c);
+        }
+        return new Promise((resolve, reject) => {
+            const legacyGetUserMedia =
+                nav?.getUserMedia ||
+                nav?.webkitGetUserMedia ||
+                nav?.mozGetUserMedia ||
+                nav?.msGetUserMedia;
+            if (legacyGetUserMedia) {
+                legacyGetUserMedia.call(nav, c, resolve, reject);
+            } else {
+                reject(new Error('getUserMedia not supported'));
+            }
+        });
+    };
+
     for (const constraints of constraintTiers) {
         try {
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            stream = await requestUserMedia(constraints);
             if (stream) break;
         } catch (err: any) {
             lastError = err;
