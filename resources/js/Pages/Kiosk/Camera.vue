@@ -1622,42 +1622,44 @@ const activeSlotDimensionLabel = computed<string>(() => {
             <!-- ========================================================================= -->
             <div 
                 v-else-if="currentStep === 5"
-                class="flex-1 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8 max-w-6xl mx-auto w-full h-full overflow-y-auto md:overflow-hidden p-4 sm:p-6"
+                class="flex-1 w-full max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 p-3 sm:p-5 lg:p-6 overflow-y-auto lg:overflow-hidden min-h-0"
             >
                 <!-- Left: Final 300 DPI Composite Preview Card -->
-                <div class="flex-1 h-full max-h-[78vh] flex items-center justify-center">
+                <div class="w-full lg:flex-1 h-auto lg:h-full max-h-[52vh] sm:max-h-[58vh] lg:max-h-[82vh] flex items-center justify-center p-1 sm:p-2">
                     <div 
                         v-if="!isComposing && currentSession.final_photo_path"
-                        class="relative max-h-full rounded-3xl overflow-hidden border-2 border-slate-200 shadow-2xl bg-white group"
+                        class="relative max-h-full max-w-full rounded-2xl sm:rounded-3xl overflow-hidden border-2 border-slate-200 shadow-2xl bg-white flex items-center justify-center p-1"
                         :style="{ aspectRatio: `${templateWidth} / ${templateHeight}` }"
                     >
                         <img
                             :src="getAssetUrl(currentSession.final_photo_path) + '?v=' + finalPhotoTimestamp"
                             alt="Final Photobooth Output"
-                            class="w-full h-full object-contain"
+                            class="max-h-full max-w-full w-auto h-auto object-contain rounded-xl sm:rounded-2xl"
                         />
                     </div>
 
                     <!-- Spinner saat sedang menyusun 300 DPI -->
-                    <div v-else class="flex flex-col items-center justify-center text-center p-8">
-                        <div class="w-16 h-16 rounded-full border-4 border-pink-500 border-t-transparent animate-spin mb-4"></div>
-                        <h3 class="text-xl font-black text-slate-800">Menyusun Foto Resolusi Tinggi 300 DPI...</h3>
+                    <div v-else class="flex flex-col items-center justify-center text-center p-6">
+                        <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-full border-4 border-pink-500 border-t-transparent animate-spin mb-3"></div>
+                        <h3 class="text-lg sm:text-xl font-black text-slate-800">Menyusun Foto Resolusi Tinggi 300 DPI...</h3>
                         <p class="text-xs text-slate-400 mt-1">Menggabungkan foto ke template {{ currentTemplate.name }}</p>
                     </div>
                 </div>
 
                 <!-- Right: Print Options & QR Download Panel -->
-                <div class="w-full md:w-96 rounded-3xl bg-white border border-slate-200 p-6 flex flex-col justify-between shadow-2xl">
+                <div class="w-full lg:w-[380px] xl:w-[420px] rounded-2xl sm:rounded-3xl bg-white border border-slate-200 p-4 sm:p-5 flex flex-col justify-between shadow-xl shrink-0">
                     <div>
-                        <span class="text-xs font-bold text-pink-500 uppercase tracking-wider">Langkah 5: Cetak Foto</span>
-                        <h3 class="text-2xl font-black text-slate-900 mt-1">Cetak & Unduh</h3>
-                        <p class="text-xs text-slate-500 mt-1">Template: {{ currentTemplate.name }}</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] sm:text-xs font-bold text-pink-500 uppercase tracking-wider">Langkah 5: Cetak Foto</span>
+                            <span class="text-[11px] text-slate-400 font-medium">{{ currentTemplate.name }}</span>
+                        </div>
+                        <h3 class="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">Cetak &amp; Unduh</h3>
 
                         <!-- Active Printer Card Sesuai Pengaturan -->
-                        <div class="mt-4 p-3 rounded-2xl bg-sky-50/80 border border-sky-200/60 flex items-center justify-between">
+                        <div class="mt-3 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-sky-50/80 border border-sky-200/60 flex items-center justify-between">
                             <div class="flex items-center gap-2.5">
-                                <div class="w-8 h-8 rounded-xl bg-sky-500/15 text-sky-600 flex items-center justify-center font-bold">
-                                    <Printer class="w-4 h-4" />
+                                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-sky-500/15 text-sky-600 flex items-center justify-center font-bold">
+                                    <Printer class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                 </div>
                                 <div class="text-left">
                                     <div class="text-xs font-black text-slate-800 line-clamp-1">
@@ -1666,7 +1668,7 @@ const activeSlotDimensionLabel = computed<string>(() => {
                                     <div class="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
                                         <span>Kertas:</span>
                                         <span class="font-black text-sky-700 bg-sky-100 px-1.5 py-0.5 rounded">{{ activePaperSize || '4R' }}</span>
-                                        <span>• {{ activePrinter?.adapter === 'windows' ? 'Spooler Direct' : 'Photo DyeSub' }}</span>
+                                        <span>• {{ activePrinter?.adapter === 'windows' ? 'Direct Spooler' : 'Photo DyeSub' }}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1676,65 +1678,67 @@ const activeSlotDimensionLabel = computed<string>(() => {
                         </div>
 
                         <!-- Number of Copies Picker -->
-                        <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                            <label class="text-xs font-semibold text-slate-700 block mb-3">Jumlah Lembar Cetak:</label>
+                        <div class="mt-3 p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-200">
+                            <label class="text-xs font-semibold text-slate-700 block mb-2">Jumlah Lembar Cetak:</label>
                             <div class="flex items-center justify-between">
                                 <button
                                     @click="printCopies = Math.max(1, printCopies - 1)"
-                                    class="w-12 h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
+                                    class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
                                 >
-                                    <Minus class="w-5 h-5" />
+                                    <Minus class="w-4 h-4 sm:w-5 sm:h-5" />
                                 </button>
-                                <span class="text-3xl font-black text-pink-600 font-mono">{{ printCopies }}</span>
+                                <span class="text-2xl sm:text-3xl font-black text-pink-600 font-mono">{{ printCopies }}</span>
                                 <button
                                     @click="printCopies = Math.min(10, printCopies + 1)"
-                                    class="w-12 h-12 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
+                                    class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-bold text-lg flex items-center justify-center border border-slate-200 active:scale-90 transition-all shadow-sm"
                                 >
-                                    <Plus class="w-5 h-5" />
+                                    <Plus class="w-4 h-4 sm:w-5 sm:h-5" />
                                 </button>
                             </div>
-                            <div class="text-[11px] text-slate-500 text-center mt-3">
-                                Format Kertas: <strong class="text-slate-700">{{ activePaperSize || currentTemplate?.paper_size || '4R' }}</strong> Glossy Premium
+                            <div class="text-[10px] sm:text-[11px] text-slate-500 text-center mt-2">
+                                Format: <strong class="text-slate-700">{{ activePaperSize || currentTemplate?.paper_size || '4R' }}</strong> Glossy Premium
                             </div>
                         </div>
 
                         <!-- QR Code Mobile Download Info -->
-                        <div class="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-4">
-                            <div class="w-14 h-14 rounded-xl bg-white p-1 flex items-center justify-center shadow-sm border border-slate-200">
-                                <QrCode class="w-12 h-12 text-slate-900" />
+                        <div class="mt-3 p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+                            <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-white p-1 flex items-center justify-center shadow-sm border border-slate-200 shrink-0">
+                                <QrCode class="w-9 h-9 sm:w-10 sm:h-10 text-slate-900" />
                             </div>
                             <div class="text-xs">
                                 <p class="font-bold text-slate-900">Salinan Digital Tersedia</p>
-                                <p class="text-[11px] text-slate-500 mt-0.5">Kode: {{ currentSession.digital_code }}</p>
-                                <p class="text-[10px] text-pink-600 font-medium mt-0.5">Scan di hasil cetak untuk unduh</p>
+                                <p class="text-[10px] sm:text-[11px] text-slate-500">Kode: <strong class="text-slate-700">{{ currentSession.digital_code }}</strong></p>
+                                <p class="text-[10px] text-pink-600 font-medium">Scan di hasil cetak untuk unduh</p>
                             </div>
                         </div>
                     </div>
 
                     <!-- Action Buttons -->
-                    <div class="mt-6 space-y-2.5">
+                    <div class="mt-4 sm:mt-5 space-y-2">
                         <button
                             @click="triggerPrint"
-                            class="w-full py-4 md:py-5 rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-base md:text-lg shadow-lg shadow-pink-500/40 flex items-center justify-center gap-3 transition-all active:scale-95"
+                            class="w-full py-3.5 sm:py-4 rounded-xl sm:rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-400 hover:to-rose-400 text-white font-black text-sm sm:text-base shadow-lg shadow-pink-500/30 flex items-center justify-center gap-2.5 transition-all active:scale-95 cursor-pointer"
                         >
-                            <Printer class="w-6 h-6 stroke-[2.5]" />
+                            <Printer class="w-5 h-5 stroke-[2.5]" />
                             <span>CETAK FOTO SEKARANG</span>
                         </button>
 
-                        <button
-                            @click="handleRestartAll"
-                            class="w-full py-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 transition-all flex items-center justify-center gap-1.5"
-                        >
-                            <RotateCcw class="w-3.5 h-3.5" />
-                            <span>Foto Ulang</span>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button
+                                @click="handleRestartAll"
+                                class="flex-1 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                            >
+                                <RotateCcw class="w-3.5 h-3.5" />
+                                <span>Foto Ulang</span>
+                            </button>
 
-                        <button
-                            @click="handleDoneSession"
-                            class="w-full py-2.5 rounded-2xl text-slate-400 hover:text-slate-600 font-semibold text-xs transition-all text-center"
-                        >
-                            Lewati & Selesai
-                        </button>
+                            <button
+                                @click="handleDoneSession"
+                                class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all text-center active:scale-95"
+                            >
+                                Lewati &amp; Selesai
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -76,33 +76,36 @@ function handleReprint() {
             </div>
 
             <!-- Content Card: Photo Thumbnail + QR Code -->
-            <div class="my-3 sm:my-auto flex flex-col md:flex-row items-center justify-center gap-5 sm:gap-8 bg-slate-900/80 border border-white/10 p-5 sm:p-8 rounded-3xl backdrop-blur-md shadow-2xl">
+            <div class="my-2 sm:my-auto flex flex-col md:flex-row items-center justify-center gap-4 sm:gap-8 bg-slate-900/80 border border-white/10 p-4 sm:p-6 md:p-8 rounded-3xl backdrop-blur-md shadow-2xl max-h-[60vh] md:max-h-[68vh] overflow-y-auto md:overflow-visible">
                 <!-- Preview Thumbnail -->
-                <div class="w-36 sm:w-48 md:w-56 aspect-[2/3] rounded-2xl overflow-hidden border border-white/20 shadow-xl bg-black">
+                <div 
+                    class="w-auto h-auto max-h-[38vh] sm:max-h-[46vh] md:max-h-[54vh] max-w-[280px] sm:max-w-[340px] rounded-2xl overflow-hidden border border-white/20 shadow-xl bg-black/40 flex items-center justify-center p-1"
+                    :style="{ aspectRatio: `${session.template?.width || 1200} / ${session.template?.height || 1800}` }"
+                >
                     <img
                         :src="getAssetUrl(session.final_photo_path)"
                         alt="Foto Final"
-                        class="w-full h-full object-contain"
+                        class="max-h-full max-w-full w-auto h-auto object-contain rounded-xl"
                     />
                 </div>
 
                 <!-- QR Code Box -->
-                <div class="flex flex-col items-center max-w-xs">
-                    <span class="text-xs font-bold text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <div class="flex flex-col items-center max-w-xs shrink-0">
+                    <span class="text-[11px] sm:text-xs font-bold text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
                         <Sparkles class="w-3.5 h-3.5" />
                         <span>VERSI DIGITAL</span>
                     </span>
 
-                    <div class="p-2.5 sm:p-3 bg-white rounded-2xl shadow-xl border-2 border-amber-400/40">
-                        <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR Code Unduh" class="w-36 h-36 sm:w-48 sm:h-48" />
-                        <div v-else class="w-36 h-36 sm:w-48 sm:h-48 flex items-center justify-center text-slate-950">
-                            <QrCode class="w-24 h-24 sm:w-32 sm:h-32" />
+                    <div class="p-2 sm:p-3 bg-white rounded-2xl shadow-xl border-2 border-amber-400/40">
+                        <img v-if="qrDataUrl" :src="qrDataUrl" alt="QR Code Unduh" class="w-32 h-32 sm:w-44 sm:h-44" />
+                        <div v-else class="w-32 h-32 sm:w-44 sm:h-44 flex items-center justify-center text-slate-950">
+                            <QrCode class="w-20 h-20 sm:w-28 sm:h-28" />
                         </div>
                     </div>
 
-                    <p class="text-xs font-bold text-white mt-2.5 sm:mt-3">Scan dengan Kamera HP</p>
-                    <p class="text-[11px] text-slate-400 mt-0.5 sm:mt-1">
-                        Atau akses kode: <span class="font-mono font-bold text-amber-300">{{ session.digital_code }}</span>
+                    <p class="text-xs font-bold text-white mt-2 sm:mt-2.5">Scan dengan Kamera HP</p>
+                    <p class="text-[11px] text-slate-400 mt-0.5">
+                        Kode: <span class="font-mono font-bold text-amber-300">{{ session.digital_code }}</span>
                     </p>
                 </div>
             </div>
