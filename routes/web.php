@@ -121,6 +121,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/print-station/select-printer', [PrintStationController::class, 'selectPrinter']);
         Route::post('/print-station/sync-printers', [PrintStationController::class, 'syncPrinters']);
         Route::post('/print-station/jobs/{jobId}/reprint', [PrintStationController::class, 'reprint']);
+        Route::post('/print-station/jobs/{jobId}/print-direct', [PrintStationController::class, 'printDirect']);
         Route::post('/print-station/jobs/{jobId}/update', [PrintAgentController::class, 'updateJob']);
 
         // Admin API

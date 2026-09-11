@@ -627,6 +627,48 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
     }
     return slots;
 }
+
+// -----------------------------------------------------------------------------
+// UKURAN & RASIO ASPEK SLOT FOTO SESUAI TEMPLATE
+// -----------------------------------------------------------------------------
+const activeSlotElement = computed<TemplateElement | null>(() => {
+    const tpl = currentTemplate.value;
+    if (!tpl) return null;
+    const slots = getPhotoSlots(tpl);
+    const found = slots.find(s => Number(s.slot_index) === Number(currentSlotIndex.value));
+    return found || slots[0] || null;
+});
+
+const activeSlotAspectRatio = computed<string>(() => {
+    const el = activeSlotElement.value;
+    const tpl = currentTemplate.value;
+    const tW = tpl?.width || 1200;
+    const tH = tpl?.height || 1800;
+
+    if (el && el.width > 0 && el.height > 0) {
+        const pixelW = (el.width / 100) * tW;
+        const pixelH = (el.height / 100) * tH;
+        return `${pixelW} / ${pixelH}`;
+    }
+
+    if (selectedFormat.value === 'strip' || isTemplateStrip(tpl)) {
+        return '3 / 2';
+    }
+    return '4 / 3';
+});
+
+const activeSlotDimensionLabel = computed<string>(() => {
+    const el = activeSlotElement.value;
+    const tpl = currentTemplate.value;
+    const tW = tpl?.width || 1200;
+    const tH = tpl?.height || 1800;
+    if (el && el.width > 0 && el.height > 0) {
+        const pixelW = Math.round((el.width / 100) * tW);
+        const pixelH = Math.round((el.height / 100) * tH);
+        return `${pixelW} × ${pixelH} px`;
+    }
+    return selectedFormat.value === 'strip' ? '3:2' : '4:3';
+});
 </script>
 
 <template>
@@ -1251,9 +1293,18 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                         v-show="viewMode === 'dual'"
                         class="hidden lg:flex flex-row items-center justify-center gap-6 w-full h-full max-w-6xl mx-auto"
                     >
-                        <!-- Left: Large Studio Viewfinder Card -->
-                        <div class="flex-1 h-full max-h-[72vh] flex items-center justify-center">
-                            <div class="relative w-full h-full max-w-2xl bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center">
+                        <!-- Left: Large Studio Viewfinder Card (Ukuran & Rasio Sesuai Slot Template) -->
+                        <div class="flex-1 h-full max-h-[72vh] flex items-center justify-center p-2">
+                            <div 
+                                class="relative bg-black rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-800 flex items-center justify-center transition-all duration-300 mx-auto"
+                                :style="{
+                                    aspectRatio: activeSlotAspectRatio,
+                                    maxHeight: '72vh',
+                                    maxWidth: '100%',
+                                    height: 'auto',
+                                    width: 'auto',
+                                }"
+                            >
                                 <video
                                     :ref="setLargeVideoRef"
                                     autoplay
@@ -1273,13 +1324,16 @@ function getPhotoSlots(tpl: Template): TemplateElement[] {
                                 </div>
 
                                 <!-- Studio Badges -->
-                                <div class="absolute top-4 left-4 z-20 flex items-center gap-2">
+                                <div class="absolute top-4 left-4 z-20 flex items-center gap-2 flex-wrap">
                                     <div class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-black flex items-center gap-1.5 shadow-md">
                                         <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
                                         <span>LIVE STUDIO</span>
                                     </div>
                                     <div class="px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-sm text-amber-300 text-[11px] font-black border border-amber-400/30">
                                         Pose Foto #{{ currentSlotIndex }}
+                                    </div>
+                                    <div class="hidden sm:flex px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm text-slate-300 text-[10px] font-mono border border-white/10">
+                                        📐 Slot: {{ activeSlotDimensionLabel }}
                                     </div>
                                 </div>
 

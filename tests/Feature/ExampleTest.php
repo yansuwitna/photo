@@ -648,6 +648,68 @@ class ExampleTest extends TestCase
         $this->assertEquals($printerB->id, $jobB->printer_id);
         $this->assertEquals('STAND-02', $jobB->booth_id);
     }
+
+    public function test_print_station_direct_print_endpoint_executes_successfully(): void
+    {
+        $user = User::factory()->create();
+
+        // Siapkan printer dan file dummy test
+        $printer = \App\Models\Printer::create([
+            'name' => 'Microsoft Print to PDF',
+            'brand' => 'PDF Virtual',
+            'adapter' => 'windows',
+            'is_default' => true,
+        ]);
+
+        $testPhotoRel = 'tests/direct_print_unit_test.png';
+        $fullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($testPhotoRel);
+        if (!file_exists($fullPath)) {
+            $dir = dirname($fullPath);
+            if (!is_dir($dir)) mkdir($dir, 0755, true);
+            $im = imagecreatetruecolor(600, 900);
+            imagefill($im, 0, 0, imagecolorallocate($im, 50, 50, 50));
+            imagepng($im, $fullPath);
+            imagedestroy($im);
+        }
+
+        $session = \App\Models\BoothSession::create([
+            'session_code' => 'PB-DIRECT-01',
+            'booth_id' => 'STAND-01',
+            'total_photos_required' => 1,
+            'photos_captured_count' => 1,
+            'final_photo_path' => $testPhotoRel,
+            'status' => 'ready_to_print',
+            'payment_status' => 'paid',
+        ]);
+
+        $job = \App\Models\PrintJob::create([
+            'session_id' => $session->id,
+            'printer_id' => $printer->id,
+            'booth_id' => 'STAND-01',
+            'copies' => 1,
+            'paper_size' => '4R',
+            'status' => 'pending',
+            'progress' => 0,
+        ]);
+
+        // Panggil endpoint direct print
+        $res = $this->actingAs($user)->postJson("/api/print-station/jobs/{$job->id}/print-direct", [
+            'booth_id' => 'STAND-01',
+            'printer_id' => $printer->id,
+            'paper_size' => '4R',
+            'copies' => 1,
+        ]);
+
+        $res->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+            ]);
+
+        // Verifikasi status job dan session
+        $this->assertEquals('completed', $job->fresh()->status);
+        $this->assertEquals(100, $job->fresh()->progress);
+        $this->assertEquals('printed', $session->fresh()->print_status);
+    }
 }
 
 

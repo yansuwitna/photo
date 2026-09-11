@@ -81,6 +81,12 @@ const isTestingPrint = ref(false);
 const previewPhotoUrl = ref<string | null>(null);
 const copiedShortcut = ref(false);
 
+// Mode Cetak: 'direct' (Direct Windows Spooler tanpa dialog) atau 'browser' (Iframe Web Print)
+const printMethod = ref<'direct' | 'browser'>(
+    (typeof window !== 'undefined' ? (localStorage.getItem('print_station_method') as any) : null) || 'direct'
+);
+const chosenPrintMethod = ref<'direct' | 'browser'>(printMethod.value);
+
 const availablePaperSizes = [
     { value: '4R', label: '4R (10 x 15 cm / 4x6")' },
     { value: 'Strip 2x6', label: 'Strip 2x6 (5 x 15 cm / 2x6")' },
@@ -118,6 +124,7 @@ function changeBooth(booth: string) {
 function openPrinterModal() {
     chosenPrinterId.value = activePrinter.value?.id || (printersList.value.length > 0 ? printersList.value[0].id : null);
     chosenPaperSize.value = activePaperSize.value || '4R';
+    chosenPrintMethod.value = printMethod.value;
     showPrinterModal.value = true;
 }
 
@@ -136,6 +143,10 @@ async function handleSavePrinter() {
         if (res.data.success) {
             activePrinter.value = res.data.active_printer;
             activePaperSize.value = res.data.active_paper_size;
+            printMethod.value = chosenPrintMethod.value;
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('print_station_method', chosenPrintMethod.value);
+            }
             showPrinterModal.value = false;
             showSuccess('Printer Disimpan', res.data.message || `Printer ${selectedBooth.value} berhasil diubah!`);
             await fetchJobs();
@@ -234,55 +245,81 @@ async function pollAndPrintEngine() {
     }
 }
 
-// Eksekusi cetak foto melalui silent iframe di browser
+// Eksekusi cetak foto: Langsung ke Windows Print Spooler (atau browser iframe jika mode browser)
 async function executePrintJob(job: PrintJobItem) {
     if (isPrinting.value) return;
     isPrinting.value = true;
     activeJob.value = job;
-    printProgress.value = 15;
+    printProgress.value = 20;
 
     try {
-        // 1. Beritahu backend bahwa job mulai dicetak
-        await axios.post(`/api/print-station/jobs/${job.id}/update`, {
-            status: 'printing',
-            progress: 30,
-        });
-        printProgress.value = 40;
-
         if (soundEnabled.value) {
             audioStore.playBeep(784, 0.15, 'sine');
         }
 
-        // 2. Preload gambar foto dan konversi ke Blob URL untuk menjamin tersedia di RAM
-        if (!job.file_url) {
-            throw new Error('URL foto tidak ditemukan pada antrean.');
-        }
+        if (printMethod.value === 'direct') {
+            // =========================================================================
+            // MODE DIRECT WINDOWS SPOOLER: Cetak langsung ke printer tanpa pop-up dialog!
+            // =========================================================================
+            printProgress.value = 45;
 
-        const safeUrl = resolvePhotoUrl(job.file_url);
-        const resolvedBlobUrl = await preloadImage(safeUrl);
-        printProgress.value = 70;
+            const res = await axios.post(`/api/print-station/jobs/${job.id}/print-direct`, {
+                booth_id: selectedBooth.value,
+                printer_id: chosenPrinterId.value || activePrinter.value?.id,
+                paper_size: activePaperSize.value || job.paper_size,
+                copies: job.copies,
+            });
 
-        // 3. Render ke dalam Hidden Iframe dan tunggu decoding gambar selesai
-        await printViaIframe(job, resolvedBlobUrl);
-        printProgress.value = 95;
+            if (!res.data.success) {
+                throw new Error(res.data.message || 'Gagal mengirim tugas cetak ke spooler printer.');
+            }
 
-        // Bersihkan blob URL
-        if (resolvedBlobUrl && resolvedBlobUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(resolvedBlobUrl);
-        }
+            printProgress.value = 90;
+            completedCount.value += (job.copies || 1);
+            printProgress.value = 100;
 
-        // 4. Update status job menjadi completed
-        await axios.post(`/api/print-station/jobs/${job.id}/update`, {
-            status: 'completed',
-            progress: 100,
-        });
+            if (soundEnabled.value) {
+                audioStore.playPrintDone();
+                audioStore.speakInstruction(`Foto ${job.session_code || 'sesi'} berhasil dikirim ke printer.`);
+            }
 
-        completedCount.value += (job.copies || 1);
-        printProgress.value = 100;
+        } else {
+            // =========================================================================
+            // MODE FALLBACK: Browser Web Print (Iframe Print)
+            // =========================================================================
+            await axios.post(`/api/print-station/jobs/${job.id}/update`, {
+                status: 'printing',
+                progress: 30,
+            });
+            printProgress.value = 50;
 
-        if (soundEnabled.value) {
-            audioStore.playPrintDone();
-            audioStore.speakInstruction(`Foto ${job.session_code || 'sesi'} berhasil dicetak.`);
+            if (!job.file_url) {
+                throw new Error('URL foto tidak ditemukan pada antrean.');
+            }
+
+            const safeUrl = resolvePhotoUrl(job.file_url);
+            const resolvedBlobUrl = await preloadImage(safeUrl);
+            printProgress.value = 75;
+
+            await printViaIframe(job, resolvedBlobUrl);
+            printProgress.value = 95;
+
+            if (resolvedBlobUrl && resolvedBlobUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(resolvedBlobUrl);
+            }
+
+            await axios.post(`/api/print-station/jobs/${job.id}/update`, {
+                status: 'completed',
+                progress: 100,
+            });
+
+            completedCount.value += (job.copies || 1);
+            printProgress.value = 100;
+
+            if (soundEnabled.value) {
+                audioStore.playPrintDone();
+                audioStore.speakInstruction(`Foto ${job.session_code || 'sesi'} berhasil dicetak.`);
+            }
         }
 
         // Cooldown sebelum mengambil job berikutnya
@@ -291,11 +328,11 @@ async function executePrintJob(job: PrintJobItem) {
             activeJob.value = null;
             printProgress.value = 0;
             await fetchJobs();
-        }, 1500);
+        }, 1200);
 
     } catch (err: any) {
         console.error('Print job error:', err);
-        const errMsg = err?.message || 'Gagal memproses cetak browser.';
+        const errMsg = err?.response?.data?.message || err?.message || 'Gagal memproses cetak.';
         try {
             await axios.post(`/api/print-station/jobs/${job.id}/update`, {
                 status: 'failed',
@@ -590,9 +627,17 @@ function copyRunCommand() {
                             <span class="sm:hidden">{{ autoPrintEnabled ? 'ON' : 'OFF' }}</span>
                         </span>
                     </div>
-                    <p class="text-xs text-slate-400 hidden sm:block">
-                        Pencetakan otomatis background untuk Stand & Printer lokal
-                    </p>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <p class="text-xs text-slate-400 hidden sm:block">
+                            Pencetakan background untuk Stand & Printer lokal
+                        </p>
+                        <span v-if="printMethod === 'direct'" class="hidden md:inline-flex items-center gap-1 text-[10px] font-black text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                            ⚡ Direct Spooler (Tanpa Web Print)
+                        </span>
+                        <span v-else class="hidden md:inline-flex items-center gap-1 text-[10px] font-black text-amber-400 bg-amber-500/15 px-2 py-0.5 rounded-md border border-amber-500/30">
+                            🌐 Browser Web Print
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -783,6 +828,30 @@ function copyRunCommand() {
                             <span class="font-black text-amber-400">{{ selectedBooth === 'all' ? 'SEMUA STAND (GLOBAL)' : selectedBooth }}</span>
                         </div>
                         <span class="text-[10px] text-amber-300/80 bg-amber-500/10 px-2 py-0.5 rounded-lg font-mono">1 Stand = 1 Printer</span>
+                    </div>
+
+                    <!-- DIRECT PRINT SPOOLER STATUS -->
+                    <div class="mt-2.5 p-3 rounded-2xl border flex items-center justify-between text-xs"
+                        :class="printMethod === 'direct' ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'"
+                    >
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="printMethod === 'direct' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'"></span>
+                            <div>
+                                <span class="font-black text-white block text-[11px]">
+                                    {{ printMethod === 'direct' ? '⚡ Direct Spooler Aktif (Langsung Cetak)' : '🌐 Mode Dialog Web Print Browser' }}
+                                </span>
+                                <span class="text-[10px] text-slate-400 block">
+                                    {{ printMethod === 'direct' ? 'Otomatis ke printer Windows tanpa pop-up dialog & tanpa klik konfirmasi.' : 'Membuka preview dialog cetak browser.' }}
+                                </span>
+                            </div>
+                        </div>
+                        <button
+                            @click="openPrinterModal"
+                            class="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex-shrink-0 ml-2"
+                            :class="printMethod === 'direct' ? 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/30' : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'"
+                        >
+                            Ubah
+                        </button>
                     </div>
 
                     <!-- STAT COUNTERS -->
@@ -1005,42 +1074,39 @@ function copyRunCommand() {
                 </div>
 
                 <div class="space-y-4 my-6 text-xs text-slate-300">
-                    <!-- Step 1 -->
+                    <!-- Feature Highlight: Direct Spooler -->
+                    <div class="flex gap-3 items-start bg-emerald-950/40 p-3.5 rounded-2xl border border-emerald-500/30">
+                        <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0">✓</div>
+                        <div>
+                            <p class="font-bold text-white flex items-center gap-2">
+                                <span>Direct Spooler Aktif (Langsung Cetak)</span>
+                                <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Bebas Pop-up</span>
+                            </p>
+                            <p class="text-slate-300 mt-1 leading-relaxed">
+                                Sistem langsung mengirimkan tugas cetak ke Windows Print Spooler untuk printer yang Anda pilih. <strong>Dialog Web Print browser tidak akan muncul</strong> dan operator tidak perlu lagi mengklik tombol konfirmasi 'Cetak' pada browser.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: Physical Printer -->
                     <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
                         <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center flex-shrink-0">1</div>
                         <div>
-                            <p class="font-bold text-white">Setel Printer Foto sebagai "Default Printer" di Windows</p>
-                            <p class="text-slate-400 mt-0.5">Buka Windows Settings > Bluetooth & Devices > Printers & Scanners > Pilih printer Anda (Epson/Canon/DNP) > Klik "Set as default".</p>
+                            <p class="font-bold text-white">Pastikan Kabel USB & Daya Printer Terpasang</p>
+                            <p class="text-slate-400 mt-0.5">
+                                Pastikan printer USB (Epson, Canon, DNP, dll) terhubung dan menyala. Jika printer sempat offline, pekerjaan cetak tetap tersimpan di antrean Windows Spooler dan otomatis dicetak saat printer menyala.
+                            </p>
                         </div>
                     </div>
 
-                    <!-- Step 2 -->
+                    <!-- Step 2: Multi-stand per laptop -->
                     <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
                         <div class="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-black flex items-center justify-center flex-shrink-0">2</div>
                         <div>
-                            <p class="font-bold text-white">Jalankan Chrome dengan Mode `--kiosk-printing`</p>
-                            <p class="text-slate-400 mt-0.5">Tutup semua Chrome, lalu tekan <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-white/20 text-amber-300">Win + R</kbd> di keyboard dan masukkan perintah ini:</p>
-                            
-                            <div class="mt-2 bg-slate-900 border border-white/10 p-2.5 rounded-xl flex items-center justify-between font-mono text-[11px] text-amber-300">
-                                <span class="truncate mr-2">chrome.exe --kiosk-printing "{{ typeof window !== 'undefined' ? window.location.href : '' }}"</span>
-                                <button 
-                                    @click="copyRunCommand"
-                                    class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 text-[10px] font-sans font-bold flex-shrink-0"
-                                >
-                                    <Check v-if="copiedShortcut" class="w-3 h-3 text-emerald-400" />
-                                    <Copy v-else class="w-3 h-3" />
-                                    <span>{{ copiedShortcut ? 'Disalin!' : 'Salin' }}</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Step 3 -->
-                    <div class="flex gap-3 items-start bg-slate-950 p-3.5 rounded-2xl border border-white/5">
-                        <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0">3</div>
-                        <div>
-                            <p class="font-bold text-white">Selesai! Tab Ini Siap Mencetak Secara Instan</p>
-                            <p class="text-slate-400 mt-0.5">Biarkan tab Print Station ini tetap terbuka di PC printer. Semua foto yang dipicu dari Kiosk / Tablet akan langsung tercetak tanpa klik konfirmasi apapun!</p>
+                            <p class="font-bold text-white">Konfigurasi 1 Stand = 1 Printer Per Laptop</p>
+                            <p class="text-slate-400 mt-0.5">
+                                Pada laptop stand masing-masing, buka halaman ini dan pilih Stand-nya (misal <strong>STAND-01</strong> di Laptop 1, <strong>STAND-02</strong> di Laptop 2). Pilih printer fisik masing-masing lewat tombol <strong>Ganti Printer</strong>.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1179,6 +1245,53 @@ function copyRunCommand() {
                                 <div class="text-xs font-bold">{{ size.value }}</div>
                                 <div class="text-[10px] text-slate-400 mt-0.5 truncate">{{ size.label }}</div>
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Print Execution Method Selector -->
+                    <div>
+                        <label class="text-xs font-black text-slate-300 uppercase tracking-wider block mb-2">
+                            Metode Pencetakan
+                        </label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div
+                                @click="chosenPrintMethod = 'direct'"
+                                class="p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3"
+                                :class="chosenPrintMethod === 'direct' 
+                                    ? 'bg-emerald-500/15 border-emerald-500 shadow-md ring-2 ring-emerald-500/20' 
+                                    : 'bg-slate-950/60 border-white/5 hover:border-white/20'"
+                            >
+                                <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 font-black flex items-center justify-center flex-shrink-0 text-sm">
+                                    ⚡
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'direct' ? 'text-emerald-300' : ''">Direct Spooler</span>
+                                        <span class="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 text-[9px] font-bold">Rekomendasi</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400 mt-1 leading-normal">
+                                        Langsung cetak ke printer Windows tanpa pop-up dialog web print dan tanpa harus klik cetak lagi.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div
+                                @click="chosenPrintMethod = 'browser'"
+                                class="p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-start gap-3"
+                                :class="chosenPrintMethod === 'browser' 
+                                    ? 'bg-amber-500/15 border-amber-500 shadow-md ring-2 ring-amber-500/20' 
+                                    : 'bg-slate-950/60 border-white/5 hover:border-white/20'"
+                            >
+                                <div class="w-8 h-8 rounded-xl bg-white/5 text-slate-400 flex items-center justify-center flex-shrink-0 text-sm">
+                                    🌐
+                                </div>
+                                <div class="min-w-0">
+                                    <span class="text-xs font-black text-white" :class="chosenPrintMethod === 'browser' ? 'text-amber-300' : ''">Browser Web Print</span>
+                                    <p class="text-[11px] text-slate-400 mt-1 leading-normal">
+                                        Membuka preview dialog cetak bawaan browser (memerlukan klik cetak di browser).
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

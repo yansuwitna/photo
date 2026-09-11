@@ -60,17 +60,18 @@ try {
 
     # Cek status kesiapan printer fisik
     $isVirtual = ($targetPrinter -match "PDF|XPS|OneNote|Fax|Virtual")
+    $printerWarning = ""
     if (-not $isVirtual) {
         $pInfo = Get-CimInstance Win32_Printer -Filter "Name = '$targetPrinter'" -ErrorAction SilentlyContinue
         if ($pInfo) {
             if ($pInfo.WorkOffline) {
-                throw "Printer '$targetPrinter' sedang OFFLINE. Pastikan kabel USB terpasang ke komputer dan tombol power printer menyala."
+                $printerWarning = " (Catatan: Printer sedang Offline di Windows. Dokumen berhasil dimasukkan ke antrean spooler dan akan otomatis dicetak saat kabel USB terpasang/printer menyala)"
             }
-            if ($pInfo.PrinterStatus -eq 7) {
-                throw "Status printer '$targetPrinter' adalah Offline. Periksa kabel USB dan daya printer."
+            elseif ($pInfo.PrinterStatus -eq 7) {
+                $printerWarning = " (Catatan: Status printer Offline di Windows. Dokumen masuk antrean spooler)"
             }
-            if ($pInfo.PrinterStatus -eq 5) {
-                throw "Printer '$targetPrinter' membutuhkan perhatian: kertas habis atau terjadi paper jam."
+            elseif ($pInfo.PrinterStatus -eq 5) {
+                $printerWarning = " (Peringatan: Kertas habis atau terjadi paper jam pada printer)"
             }
         }
     }
@@ -233,7 +234,7 @@ try {
         copies = $doc.PrinterSettings.Copies
         paper_size = if ($doc.DefaultPageSettings.PaperSize) { $doc.DefaultPageSettings.PaperSize.PaperName } else { $PaperSize }
         landscape = $doc.DefaultPageSettings.Landscape
-        message = "Pencetakan berhasil dikirim langsung ke printer $targetPrinter."
+        message = "Pencetakan berhasil dikirim langsung ke printer $targetPrinter.$printerWarning"
         pdf_path = $outputPdfPath
     }
 

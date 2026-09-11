@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\BoothSession;
+use App\Models\DeviceLog;
 use App\Models\Printer;
 use App\Models\PrintJob;
 use App\Models\Setting;
+use App\Services\Hardware\Adapters\Printer\WindowsPrinterAdapter;
 use App\Services\Hardware\PrinterManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -295,5 +298,148 @@ class PrintStationController extends Controller
             'message' => "Job #{$jobId} dimasukkan kembali ke antrean cetak.",
             'job' => $job,
         ]);
+    }
+
+    /**
+     * Eksekusi cetak langsung ke spooler printer Windows tanpa membuka dialog Web Print browser.
+     */
+    public function printDirect(Request $request, int $jobId): JsonResponse
+    {
+        $job = PrintJob::with(['session', 'printer'])->findOrFail($jobId);
+
+        $session = $job->session;
+        $finalPath = $session?->final_photo_path;
+        if (!$finalPath && file_exists(storage_path('app/public/tests/print_station_test.png'))) {
+            $finalPath = 'tests/print_station_test.png';
+        }
+
+        if (!$finalPath) {
+            $job->update([
+                'status' => 'failed',
+                'error_message' => 'Path file foto tidak ditemukan untuk dicetak.',
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Path file foto tidak ditemukan untuk dicetak.',
+            ], 404);
+        }
+
+        // Resolusi file fisik foto di server
+        $fullPath = null;
+        $cleanPath = ltrim(preg_replace('/^(public\/|\/storage\/|storage\/)/', '', $finalPath), '/');
+
+        if (Storage::disk('public')->exists($cleanPath)) {
+            $fullPath = Storage::disk('public')->path($cleanPath);
+        } elseif (file_exists($finalPath)) {
+            $fullPath = $finalPath;
+        } elseif (file_exists(storage_path('app/' . $finalPath))) {
+            $fullPath = storage_path('app/' . $finalPath);
+        } elseif (file_exists(public_path($finalPath))) {
+            $fullPath = public_path($finalPath);
+        }
+
+        if (!$fullPath || !file_exists($fullPath)) {
+            $job->update([
+                'status' => 'failed',
+                'error_message' => "File fisik foto tidak ditemukan di server: {$finalPath}",
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => "File fisik foto tidak ditemukan di server: {$finalPath}",
+            ], 404);
+        }
+
+        $printerManager = new PrinterManager();
+        $targetBooth = $request->input('booth_id') ?: ($job->booth_id ?: ($session?->booth_id ?: 'STAND-01'));
+
+        $printer = null;
+        if ($request->filled('printer_id')) {
+            $printer = Printer::find($request->input('printer_id'));
+        }
+        if (!$printer && $job->printer) {
+            $printer = $job->printer;
+        }
+        if (!$printer) {
+            $printer = $printerManager->getPrinterForBooth($targetBooth);
+        }
+
+        $copies = max(1, (int)($request->input('copies') ?: ($job->copies ?: 1)));
+        $paperSize = $request->input('paper_size') ?: ($job->paper_size ?: $printerManager->getActivePaperSize(null, $targetBooth));
+
+        $job->update([
+            'status' => 'printing',
+            'progress' => 40,
+            'started_at' => now(),
+            'printer_id' => $printer?->id ?? $job->printer_id,
+        ]);
+
+        $adapter = new WindowsPrinterAdapter($printer?->name);
+        $result = $adapter->print($fullPath, $copies, $paperSize);
+
+        if (!empty($result['success'])) {
+            $job->update([
+                'status' => 'completed',
+                'progress' => 100,
+                'error_message' => null,
+                'completed_at' => now(),
+            ]);
+
+            if ($session) {
+                $session->update([
+                    'print_status' => 'printed',
+                    'printer_id' => $printer?->id ?? $session->printer_id,
+                ]);
+            }
+
+            try {
+                DeviceLog::create([
+                    'device_type' => 'printer',
+                    'device_id' => (string)($printer?->id ?? 'windows'),
+                    'event' => 'printer.direct_printed',
+                    'message' => "Cetak langsung berhasil untuk Job #{$job->id} ke printer " . ($printer?->name ?? 'Default Windows'),
+                    'severity' => 'info',
+                    'payload' => $result,
+                ]);
+            } catch (\Throwable $e) {}
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['message'] ?? ("Pencetakan langsung ke printer " . ($printer?->name ?? 'Windows') . " berhasil!"),
+                'printer' => $printer?->name,
+                'copies' => $copies,
+                'paper_size' => $paperSize,
+                'job' => $job,
+            ]);
+        } else {
+            $job->update([
+                'status' => 'failed',
+                'error_message' => $result['message'] ?? 'Gagal mencetak langsung ke printer Windows.',
+            ]);
+
+            if ($session) {
+                $session->update([
+                    'print_status' => 'failed',
+                    'error_message' => $result['message'] ?? 'Gagal mencetak langsung ke printer Windows.',
+                ]);
+            }
+
+            try {
+                DeviceLog::create([
+                    'device_type' => 'printer',
+                    'device_id' => (string)($printer?->id ?? 'windows'),
+                    'event' => 'printer.direct_failed',
+                    'message' => "Cetak langsung gagal untuk Job #{$job->id}: " . ($result['message'] ?? 'Unknown error'),
+                    'severity' => 'error',
+                    'payload' => $result,
+                ]);
+            } catch (\Throwable $e) {}
+
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Gagal mencetak langsung ke printer Windows.',
+                'printer' => $printer?->name,
+                'job' => $job,
+            ], 500);
+        }
     }
 }
