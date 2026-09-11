@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import { 
     Grid, 
     Smile, 
@@ -76,6 +76,20 @@ onUnmounted(() => {
     stopCameraStream();
 });
 
+// Jika videoRef baru saja mount dan stream sudah ada (race condition), langsung attach
+watch(videoRef, async (el) => {
+    if (el && stream && !hasActiveStream.value) {
+        el.srcObject = stream;
+        try {
+            await el.play();
+            hasActiveStream.value = true;
+            cameraError.value = null;
+        } catch (err) {
+            console.warn('Late attach play() error:', err);
+        }
+    }
+});
+
 async function initWebcamOrSimulated() {
     stopCameraStream();
     cameraError.value = null;
@@ -131,11 +145,28 @@ async function initWebcamOrSimulated() {
 
         if (activeStream) {
             stream = activeStream;
+            // Tunggu DOM siap (nextTick), lalu coba assign ke videoRef
+            await nextTick();
+            // Retry hingga 10x × 100ms jika videoRef belum mount (race condition)
+            for (let attempt = 0; attempt < 10; attempt++) {
+                if (videoRef.value) break;
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
             if (videoRef.value) {
                 videoRef.value.srcObject = stream;
-                await videoRef.value.play();
+                try {
+                    await videoRef.value.play();
+                } catch (playErr) {
+                    console.warn('video.play() error:', playErr);
+                }
                 hasActiveStream.value = true;
                 cameraError.value = null;
+                return;
+            } else {
+                // videoRef benar-benar tidak tersedia — tetap tampilkan stream tanpa error
+                hasActiveStream.value = true;
+                cameraError.value = null;
+                console.warn('videoRef still null after retries, stream ready but could not attach.');
                 return;
             }
         }
@@ -398,6 +429,7 @@ defineExpose({
                 autoplay
                 playsinline
                 muted
+                v-show="hasActiveStream"
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-200"
                 :class="{ '-scale-x-100': mirrorMode }"
                 :style="{
@@ -411,6 +443,7 @@ defineExpose({
                 ref="canvasRef"
                 width="1280"
                 height="720"
+                v-show="!hasActiveStream"
                 class="absolute inset-0 w-full h-full object-cover transition-transform duration-200"
                 :class="{ '-scale-x-100': mirrorMode }"
                 :style="{
